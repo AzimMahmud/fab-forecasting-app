@@ -1,0 +1,67 @@
+# ============================================================================
+# FABRIC CONSUMPTION FORECASTING SYSTEM
+# Docker Ignore Configuration
+# ============================================================================
+# Version: 1.0.0
+# Developer: Azim Mahmud
+# ============================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Data
+*.csv
+*.xlsx
+*.json
+!model_metadata.json
+*.pkl
+generated_data/
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Testing
+.pytest_cache/
+.tox/
+.coverage
+*.cover
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore

@@ -1,0 +1,36 @@
+{
+  "version": "1.0.0",
+  "training_date": "2026-01-29",
+  "unit": "meters",
+  "models": {
+    "xgboost": {
+      "file": "xgboost_model.pkl",
+      "type": "xgboost.XGBRegressor",
+      "features": 8,
+      "accuracy_r2": 0.944
+    },
+    "random_forest": {
+      "file": "random_forest_model.pkl",
+      "type": "sklearn.ensemble.RandomForestRegressor",
+      "features": 8,
+      "accuracy_r2": 0.9
+    },
+    "linear_regression": {
+      "file": "linear_regression_model.pkl",
+      "type": "sklearn.linear_model.LinearRegression",
+      "features": 8,
+      "accuracy_r2": 0.864
+    }
+  },
+  "feature_names": [
+    "order_quantity",
+    "fabric_width_cm",
+    "marker_efficiency",
+    "defect_rate",
+    "operator_experience",
+    "garment_type_encoded",
+    "fabric_type_encoded",
+    "pattern_complexity_encoded"
+  ],
+  "target": "fabric_consumption_meters"
+}

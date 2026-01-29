@@ -1,0 +1,41 @@
+# ============================================================================
+# FABRIC CONSUMPTION FORECASTING SYSTEM
+# Streamlit Configuration
+# ============================================================================
+# Version: 1.0.0
+# Developer: Azim Mahmud
+# ============================================================================
+
+[general]
+email = "Azim Mahmud <azim@example.com>"
+
+[logger]
+level = "info"
+messageFormat = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+
+[client]
+showErrorDetails = false
+maxUploadSize = 200  # MB
+toolbarMode = "minimal"
+
+[server]
+port = 8501
+address = "0.0.0.0"
+headless = true
+runOnSave = false
+fileWatcherType = "none"
+maxUploadSize = 200
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
+
+[theme]
+primaryColor = "#1f77b4"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"

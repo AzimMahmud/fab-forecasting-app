@@ -634,6 +634,13 @@ class ModelManager:
                 order_data['complexity_encoded'],
             ]])
 
+            # Scale features if in production mode
+            if self.mode == ProcessingMode.PRODUCTION:
+                if 'scaler' in self.models:
+                    features = self.models['scaler'].transform(features)
+                else:
+                    logger.warning("Scaler not loaded, using raw features")
+
             # Predict (in training units)
             prediction_base = float(model.predict(features)[0])
 

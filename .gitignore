@@ -86,9 +86,14 @@ Thumbs.db
 # Project specific
 *.log
 logs/
-models/*.pkl
+# Uncomment next line if you want to ignore trained models
+# models/*.pkl
 !models/.gitkeep
-generated_data/
+# Ignore generated data but keep data generation script
+generated_data/*.csv
+generated_data/*.xlsx
+generated_data/*.json
+!generated_data/
 *.csv
 *.xlsx
 *.json

@@ -1,0 +1,32 @@
+
+Dataset Overview
+==================================================
+Total Orders: 100
+Date Range: 2024-01-01 00:00:00 to 2024-01-20 00:00:00
+Primary Unit: meters
+
+Consumption Statistics (Meters)
+==================================================
+Avg Planned BOM: 7115.13
+Avg Actual Consumption: 7055.70
+Avg Variance: -59.43
+Avg Variance %: 0.50%
+
+Consumption Statistics (Yards)
+==================================================
+Avg Planned BOM: 7781.20
+Avg Actual Consumption: 7716.21
+Avg Variance: -65.00
+
+Economic Impact
+==================================================
+Total Planned Cost: $8,797,730.62
+Total Actual Cost: $8,689,421.72
+Total Waste Cost: $159,945.06
+Avg Waste Per Order: $1599.45
+
+Distribution
+==================================================
+Over-consumption %: 53.0%
+Under-consumption %: 47.0%
+Perfect match %: 0.0%

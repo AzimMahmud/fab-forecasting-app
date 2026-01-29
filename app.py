@@ -631,7 +631,7 @@ class ModelManager:
                 order_data['operator_experience'],
                 order_data['garment_type_encoded'],
                 order_data['fabric_type_encoded'],
-                order_data['complexity_encoded'],
+                order_data['pattern_complexity_encoded'],
             ]])
 
             # Scale features if in production mode
@@ -1232,7 +1232,7 @@ class SinglePredictionPage:
                 'operator_experience': order_input.operator_experience,
                 'garment_type_encoded': EncodingMaps.GARMENT_TYPE[order_input.garment_type],
                 'fabric_type_encoded': EncodingMaps.FABRIC_TYPE[order_input.fabric_type],
-                'complexity_encoded': EncodingMaps.COMPLEXITY[order_input.pattern_complexity]
+                'pattern_complexity_encoded': EncodingMaps.COMPLEXITY[order_input.pattern_complexity]
             }
 
             # Get prediction

@@ -1,25 +1,48 @@
 {
-  "version": "1.0.0",
-  "training_date": "2026-01-29",
+  "version": "2.0.0",
+  "training_date": "2026-02-05 21:48:36",
   "unit": "meters",
   "models": {
-    "xgboost": {
-      "file": "xgboost_model.pkl",
-      "type": "xgboost.XGBRegressor",
+    "linear_regression": {
+      "file": "linear_regression_model.pkl",
+      "type": "sklearn.linear_model.LinearRegression",
       "features": 8,
-      "accuracy_r2": 0.944
+      "rmse": 2039.599,
+      "mae": 1482.247,
+      "r2": 0.8634,
+      "mape": 42.78
     },
     "random_forest": {
       "file": "random_forest_model.pkl",
       "type": "sklearn.ensemble.RandomForestRegressor",
       "features": 8,
-      "accuracy_r2": 0.9
+      "rmse": 1883.283,
+      "mae": 1356.232,
+      "r2": 0.8835,
+      "mape": 51.7
     },
-    "linear_regression": {
-      "file": "linear_regression_model.pkl",
-      "type": "sklearn.linear_model.LinearRegression",
+    "xgboost": {
+      "file": "xgboost_model.pkl",
+      "type": "xgboost.XGBRegressor",
       "features": 8,
-      "accuracy_r2": 0.864
+      "rmse": 1415.739,
+      "mae": 1030.309,
+      "r2": 0.9342,
+      "mape": 23.51
+    },
+    "lstm": {
+      "file": "lstm_model.h5",
+      "type": "tensorflow.keras.Sequential",
+      "features": 8,
+      "rmse": 2039.292,
+      "mae": 1597.022,
+      "r2": 0.8634,
+      "mape": 35.43,
+      "training_history": {
+        "final_train_loss": 4457471.5,
+        "final_val_loss": 3557396.75,
+        "epochs_trained": 50
+      }
     }
   },
   "feature_names": [
@@ -32,5 +55,6 @@
     "fabric_type_encoded",
     "pattern_complexity_encoded"
   ],
-  "target": "fabric_consumption_meters"
+  "target": "fabric_consumption_meters",
+  "tensorflow_available": true
 }

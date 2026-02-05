@@ -9,7 +9,7 @@ generated historical data. Saves trained models in the models/ directory
 for production use.
 
 Key Features:
-- Trains XGBoost, Random Forest, and Linear Regression models
+- Trains XGBoost, Random Forest, LSTM and Linear Regression models
 - Handles categorical feature encoding
 - Feature scaling for numerical features
 - Evaluates model performance
@@ -33,6 +33,8 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
+import warnings
+warnings.filterwarnings('ignore')
 
 # ============================================================================
 # THIRD-PARTY IMPORTS
@@ -45,8 +47,20 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+
+# XGBoost
 import xgboost as xgb
+
+# TensorFlow/Keras for LSTM
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+    from tensorflow.keras import layers, callbacks
+    TENSORFLOW_AVAILABLE = True
+except ImportError:
+    TENSORFLOW_AVAILABLE = False
+    print("WARNING: TensorFlow not available. LSTM training will be skipped.")
 
 # ============================================================================
 # CONFIGURATION
@@ -64,8 +78,9 @@ class TrainingConfig:
     MODEL_PATH = Path("models")
     RANDOM_STATE = 42
     TEST_SIZE = 0.2
+    VALIDATION_SIZE = 0.2  # For LSTM validation
     
-    # Model Parameters
+    # XGBoost Parameters
     XGB_PARAMS = {
         "objective": "reg:squarederror",
         "random_state": RANDOM_STATE,
@@ -73,9 +88,11 @@ class TrainingConfig:
         "max_depth": 8,
         "learning_rate": 0.1,
         "subsample": 0.8,
-        "colsample_bytree": 0.8
+        "colsample_bytree": 0.8,
+        "verbosity": 0
     }
     
+    # Random Forest Parameters
     RF_PARAMS = {
         "random_state": RANDOM_STATE,
         "n_estimators": 200,
@@ -84,11 +101,25 @@ class TrainingConfig:
         "min_samples_leaf": 2,
         "max_features": "sqrt",
         "bootstrap": True,
-        "n_jobs": -1
+        "n_jobs": -1,
+        "verbose": 0
     }
     
+    # Linear Regression Parameters
     LR_PARAMS = {
         "fit_intercept": True
+    }
+    
+    # LSTM Parameters
+    LSTM_PARAMS = {
+        "units_layer1": 64,
+        "units_layer2": 32,
+        "dense_units": 16,
+        "dropout_rate": 0.2,
+        "batch_size": 32,
+        "epochs": 50,
+        "validation_split": 0.2,
+        "patience": 10  # Early stopping patience
     }
     
     # Dataset column mapping
@@ -215,13 +246,15 @@ class DataPreprocessor:
         logger.info("Data preprocessing completed successfully")
         return df
     
-    def scale_features(self, X: pd.DataFrame) -> np.ndarray:
+    def scale_features(self, X: pd.DataFrame, fit: bool = False) -> np.ndarray:
         """Scale numerical features using StandardScaler"""
-        if self.scaler is None:
+        if fit or self.scaler is None:
             self.scaler = StandardScaler()
             scaled_features = self.scaler.fit_transform(X)
+            logger.info("Scaler fitted and features scaled")
         else:
             scaled_features = self.scaler.transform(X)
+            logger.info("Features scaled using existing scaler")
             
         return scaled_features
 
@@ -231,12 +264,13 @@ class DataPreprocessor:
 # ============================================================================
 
 class ModelTrainer:
-    """Trains and evaluates machine learning models"""
+    """Trains and evaluates all machine learning models"""
     
     def __init__(self, config: TrainingConfig):
         self.config = config
         self.models = {}
         self.performance = {}
+        self.training_history = {}
     
     def train_xgboost(self, X_train: np.ndarray, y_train: np.ndarray) -> xgb.XGBRegressor:
         """Train XGBoost regression model"""
@@ -246,7 +280,7 @@ class ModelTrainer:
         model.fit(X_train, y_train)
         
         self.models["xgboost"] = model
-        logger.info("XGBoost training completed")
+        logger.info("✅ XGBoost training completed")
         
         return model
     
@@ -258,7 +292,7 @@ class ModelTrainer:
         model.fit(X_train, y_train)
         
         self.models["random_forest"] = model
-        logger.info("Random Forest training completed")
+        logger.info("✅ Random Forest training completed")
         
         return model
     
@@ -270,37 +304,177 @@ class ModelTrainer:
         model.fit(X_train, y_train)
         
         self.models["linear_regression"] = model
-        logger.info("Linear Regression training completed")
+        logger.info("✅ Linear Regression training completed")
         
         return model
     
-    def evaluate_model(self, model: object, X_test: np.ndarray, y_test: np.ndarray) -> dict:
-        """Evaluate model performance"""
-        y_pred = model.predict(X_test)
+    def train_lstm(self, X_train: np.ndarray, y_train: np.ndarray, 
+                   X_val: np.ndarray, y_val: np.ndarray) -> keras.Model:
+        """Train LSTM neural network model"""
         
+        if not TENSORFLOW_AVAILABLE:
+            logger.warning("⚠️ TensorFlow not available. Skipping LSTM training.")
+            return None
+        
+        logger.info("Training LSTM model...")
+        
+        # Reshape data for LSTM (samples, timesteps, features)
+        # We treat each sample as a single timestep
+        n_samples, n_features = X_train.shape
+        X_train_lstm = X_train.reshape(n_samples, 1, n_features)
+        X_val_lstm = X_val.reshape(X_val.shape[0], 1, n_features)
+        
+        logger.info(f"LSTM input shape: {X_train_lstm.shape}")
+        
+        # Build LSTM model
+        model = keras.Sequential([
+            # First LSTM layer
+            layers.LSTM(
+                self.config.LSTM_PARAMS["units_layer1"],
+                activation='relu',
+                input_shape=(1, n_features),
+                return_sequences=True,
+                name='lstm_layer_1'
+            ),
+            layers.Dropout(self.config.LSTM_PARAMS["dropout_rate"], name='dropout_1'),
+            
+            # Second LSTM layer
+            layers.LSTM(
+                self.config.LSTM_PARAMS["units_layer2"],
+                activation='relu',
+                name='lstm_layer_2'
+            ),
+            layers.Dropout(self.config.LSTM_PARAMS["dropout_rate"], name='dropout_2'),
+            
+            # Dense layers
+            layers.Dense(
+                self.config.LSTM_PARAMS["dense_units"],
+                activation='relu',
+                name='dense_1'
+            ),
+            layers.Dense(1, name='output')  # Single output for regression
+        ])
+        
+        # Compile model
+        model.compile(
+            optimizer='adam',
+            loss='mse',
+            metrics=['mae']
+        )
+        
+        logger.info("LSTM Model Architecture:")
+        model.summary(print_fn=logger.info)
+        
+        # Callbacks
+        early_stopping = callbacks.EarlyStopping(
+            monitor='val_loss',
+            patience=self.config.LSTM_PARAMS["patience"],
+            restore_best_weights=True,
+            verbose=1
+        )
+        
+        reduce_lr = callbacks.ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.5,
+            patience=5,
+            min_lr=0.00001,
+            verbose=1
+        )
+        
+        # Train model
+        logger.info("Starting LSTM training...")
+        history = model.fit(
+            X_train_lstm, y_train,
+            validation_data=(X_val_lstm, y_val),
+            epochs=self.config.LSTM_PARAMS["epochs"],
+            batch_size=self.config.LSTM_PARAMS["batch_size"],
+            callbacks=[early_stopping, reduce_lr],
+            verbose=1
+        )
+        
+        self.models["lstm"] = model
+        self.training_history["lstm"] = history.history
+        
+        logger.info(f"✅ LSTM training completed")
+        logger.info(f"   Final training loss: {history.history['loss'][-1]:.4f}")
+        logger.info(f"   Final validation loss: {history.history['val_loss'][-1]:.4f}")
+        
+        return model
+    
+    def evaluate_model(self, model: object, X_test: np.ndarray, y_test: np.ndarray, 
+                      model_name: str = None) -> dict:
+        """Evaluate model performance"""
+        
+        # Handle LSTM prediction differently (needs reshaping)
+        if model_name == "lstm" and TENSORFLOW_AVAILABLE:
+            X_test_reshaped = X_test.reshape(X_test.shape[0], 1, X_test.shape[1])
+            y_pred = model.predict(X_test_reshaped, verbose=0).flatten()
+        else:
+            y_pred = model.predict(X_test)
+        
+        # Calculate metrics
         mse = mean_squared_error(y_test, y_pred)
         rmse = np.sqrt(mse)
+        mae = mean_absolute_error(y_test, y_pred)
         r2 = r2_score(y_test, y_pred)
         
+        # Calculate MAPE (Mean Absolute Percentage Error)
+        mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
+        
         return {
-            "mse": mse,
-            "rmse": rmse,
-            "r2": r2
+            "mse": float(mse),
+            "rmse": float(rmse),
+            "mae": float(mae),
+            "r2": float(r2),
+            "mape": float(mape)
         }
     
     def train_all_models(self, X_train: np.ndarray, y_train: np.ndarray, 
+                        X_val: np.ndarray, y_val: np.ndarray,
                         X_test: np.ndarray, y_test: np.ndarray):
         """Train all models and evaluate performance"""
         
-        # Train each model
-        self.train_xgboost(X_train, y_train)
-        self.train_random_forest(X_train, y_train)
+        logger.info("\n" + "="*60)
+        logger.info("TRAINING ALL MODELS")
+        logger.info("="*60)
+        
+        # Train Linear Regression
+        logger.info("\n[1/4] Linear Regression")
+        logger.info("-"*40)
         self.train_linear_regression(X_train, y_train)
         
-        # Evaluate each model
+        # Train Random Forest
+        logger.info("\n[2/4] Random Forest")
+        logger.info("-"*40)
+        self.train_random_forest(X_train, y_train)
+        
+        # Train XGBoost
+        logger.info("\n[3/4] XGBoost")
+        logger.info("-"*40)
+        self.train_xgboost(X_train, y_train)
+        
+        # Train LSTM (if TensorFlow available)
+        logger.info("\n[4/4] LSTM Neural Network")
+        logger.info("-"*40)
+        if TENSORFLOW_AVAILABLE:
+            self.train_lstm(X_train, y_train, X_val, y_val)
+        else:
+            logger.warning("⚠️ LSTM training skipped (TensorFlow not available)")
+        
+        # Evaluate all models
+        logger.info("\n" + "="*60)
+        logger.info("EVALUATING ALL MODELS")
+        logger.info("="*60)
+        
         for name, model in self.models.items():
-            self.performance[name] = self.evaluate_model(model, X_test, y_test)
-            logger.info(f"{name} performance: R² = {self.performance[name]['r2']:.3f}")
+            logger.info(f"\nEvaluating {name}...")
+            self.performance[name] = self.evaluate_model(model, X_test, y_test, name)
+            
+            metrics = self.performance[name]
+            logger.info(f"  RMSE: {metrics['rmse']:.3f}")
+            logger.info(f"  MAE:  {metrics['mae']:.3f}")
+            logger.info(f"  R²:   {metrics['r2']:.4f}")
+            logger.info(f"  MAPE: {metrics['mape']:.2f}%")
         
         return self.models, self.performance
 
@@ -323,10 +497,21 @@ class ModelSaver:
         try:
             file_path = self.config.MODEL_PATH / filename
             joblib.dump(model, file_path)
-            logger.info(f"Model saved to {file_path}")
+            logger.info(f"✅ Model saved to {file_path}")
             return str(file_path)
         except Exception as e:
-            logger.error(f"Failed to save model: {e}")
+            logger.error(f"❌ Failed to save model: {e}")
+            raise
+    
+    def save_keras_model(self, model: keras.Model, filename: str) -> str:
+        """Save Keras/LSTM model"""
+        try:
+            file_path = self.config.MODEL_PATH / filename
+            model.save(file_path)
+            logger.info(f"✅ Keras model saved to {file_path}")
+            return str(file_path)
+        except Exception as e:
+            logger.error(f"❌ Failed to save Keras model: {e}")
             raise
     
     def save_scaler(self, scaler: object) -> str:
@@ -338,34 +523,46 @@ class ModelSaver:
         return self.save_model(encoders, "label_encoders.pkl")
     
     def save_metadata(self, performance: dict, training_date: str, 
-                     features: list, target: str) -> str:
+                     features: list, target: str, training_history: dict = None) -> str:
         """Save model metadata"""
         metadata = {
-            "version": "1.0.0",
+            "version": "2.0.0",
             "training_date": training_date,
             "unit": "meters",
             "models": {},
             "feature_names": features,
-            "target": target
+            "target": target,
+            "tensorflow_available": TENSORFLOW_AVAILABLE
         }
         
         for name, metrics in performance.items():
             metadata["models"][name] = {
-                "file": f"{name}_model.pkl",
+                "file": f"{name}_model.pkl" if name != "lstm" else f"{name}_model.h5",
                 "type": self._get_model_type(name),
                 "features": len(features),
-                "accuracy_r2": round(metrics["r2"], 3)
+                "rmse": round(metrics["rmse"], 3),
+                "mae": round(metrics["mae"], 3),
+                "r2": round(metrics["r2"], 4),
+                "mape": round(metrics["mape"], 2)
             }
+            
+            # Add LSTM training history if available
+            if name == "lstm" and training_history and "lstm" in training_history:
+                metadata["models"][name]["training_history"] = {
+                    "final_train_loss": float(training_history["lstm"]["loss"][-1]),
+                    "final_val_loss": float(training_history["lstm"]["val_loss"][-1]),
+                    "epochs_trained": len(training_history["lstm"]["loss"])
+                }
         
         metadata_path = self.config.MODEL_PATH / "model_metadata.json"
         
         try:
             with open(metadata_path, "w") as f:
                 json.dump(metadata, f, indent=2)
-            logger.info(f"Metadata saved to {metadata_path}")
+            logger.info(f"✅ Metadata saved to {metadata_path}")
             return str(metadata_path)
         except Exception as e:
-            logger.error(f"Failed to save metadata: {e}")
+            logger.error(f"❌ Failed to save metadata: {e}")
             raise
     
     def _get_model_type(self, model_name: str) -> str:
@@ -373,7 +570,8 @@ class ModelSaver:
         type_map = {
             "xgboost": "xgboost.XGBRegressor",
             "random_forest": "sklearn.ensemble.RandomForestRegressor",
-            "linear_regression": "sklearn.linear_model.LinearRegression"
+            "linear_regression": "sklearn.linear_model.LinearRegression",
+            "lstm": "tensorflow.keras.Sequential"
         }
         return type_map.get(model_name, "unknown")
 
@@ -384,9 +582,12 @@ class ModelSaver:
 
 def main():
     """Main training pipeline"""
-    logger.info("=" * 60)
-    logger.info("FABRIC CONSUMPTION FORECASTING SYSTEM - MODEL TRAINING")
-    logger.info("=" * 60)
+    logger.info("=" * 80)
+    logger.info("FABRIC CONSUMPTION FORECASTING SYSTEM - COMPLETE MODEL TRAINING")
+    logger.info("=" * 80)
+    logger.info(f"TensorFlow Available: {TENSORFLOW_AVAILABLE}")
+    logger.info(f"Training 4 models: Linear Regression, Random Forest, XGBoost, LSTM")
+    logger.info("=" * 80)
     
     try:
         # Initialize configuration
@@ -398,8 +599,8 @@ def main():
         saver = ModelSaver(config)
         
         # Load and preprocess data
-        logger.info("\n1. Loading and Preprocessing Data")
-        logger.info("-" * 40)
+        logger.info("\n📥 STEP 1: Loading and Preprocessing Data")
+        logger.info("-" * 80)
         
         df = preprocessor.load_data(config.TRAINING_DATA)
         df = preprocessor.preprocess_data(df)
@@ -414,73 +615,97 @@ def main():
         logger.info(f"Features shape: {X.shape}")
         logger.info(f"Target shape: {y.shape}")
         
-        # Split into training and testing sets
-        logger.info("\n2. Splitting Data")
-        logger.info("-" * 40)
+        # Split into training, validation, and testing sets
+        logger.info("\n✂️ STEP 2: Splitting Data (Train/Val/Test)")
+        logger.info("-" * 80)
         
-        X_train, X_test, y_train, y_test = train_test_split(
+        # First split: Train+Val vs Test
+        X_temp, X_test, y_temp, y_test = train_test_split(
             X, y, 
             test_size=config.TEST_SIZE,
             random_state=config.RANDOM_STATE
         )
         
-        logger.info(f"Training samples: {X_train.shape[0]}")
-        logger.info(f"Testing samples: {X_test.shape[0]}")
+        # Second split: Train vs Val
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_temp, y_temp,
+            test_size=config.VALIDATION_SIZE,
+            random_state=config.RANDOM_STATE
+        )
+        
+        logger.info(f"Training samples: {X_train.shape[0]} ({X_train.shape[0]/len(X)*100:.1f}%)")
+        logger.info(f"Validation samples: {X_val.shape[0]} ({X_val.shape[0]/len(X)*100:.1f}%)")
+        logger.info(f"Testing samples: {X_test.shape[0]} ({X_test.shape[0]/len(X)*100:.1f}%)")
         
         # Scale features
-        logger.info("\n3. Scaling Features")
-        logger.info("-" * 40)
+        logger.info("\n📊 STEP 3: Scaling Features")
+        logger.info("-" * 80)
         
-        X_train_scaled = preprocessor.scale_features(X_train)
-        X_test_scaled = preprocessor.scale_features(X_test)
+        X_train_scaled = preprocessor.scale_features(X_train, fit=True)
+        X_val_scaled = preprocessor.scale_features(X_val, fit=False)
+        X_test_scaled = preprocessor.scale_features(X_test, fit=False)
         
-        logger.info(f"Training data scaled to mean: {X_train_scaled.mean(axis=0).round(4)}")
-        logger.info(f"Training data scaled to std: {X_train_scaled.std(axis=0).round(4)}")
+        logger.info(f"Feature scaling completed")
+        logger.info(f"Scaled data mean: ~{X_train_scaled.mean():.6f}")
+        logger.info(f"Scaled data std: ~{X_train_scaled.std():.6f}")
         
         # Train models
-        logger.info("\n4. Training Models")
-        logger.info("-" * 40)
+        logger.info("\n🤖 STEP 4: Training All Models")
+        logger.info("-" * 80)
         
         models, performance = trainer.train_all_models(
             X_train_scaled, y_train,
+            X_val_scaled, y_val,
             X_test_scaled, y_test
         )
         
-        # Evaluate models
-        logger.info("\n5. Model Performance")
-        logger.info("-" * 40)
+        # Display performance summary
+        logger.info("\n📈 STEP 5: Performance Summary")
+        logger.info("-" * 80)
+        
+        # Create comparison table
+        print("\n┌─────────────────────┬──────────┬─────────┬─────────┬──────────┐")
+        print("│ Model               │   RMSE   │   MAE   │    R²   │   MAPE   │")
+        print("├─────────────────────┼──────────┼─────────┼─────────┼──────────┤")
         
         for name, metrics in performance.items():
-            logger.info(f"{name}:")
-            logger.info(f"  R² Score: {metrics['r2']:.3f}")
-            logger.info(f"  RMSE: {metrics['rmse']:.3f}")
-            logger.info(f"  MSE: {metrics['mse']:.3f}")
-            logger.info("")
+            model_display = name.replace("_", " ").title()
+            print(f"│ {model_display:<19} │ {metrics['rmse']:>8.2f} │ {metrics['mae']:>7.2f} │ {metrics['r2']:>7.4f} │ {metrics['mape']:>7.2f}% │")
+        
+        print("└─────────────────────┴──────────┴─────────┴─────────┴──────────┘")
+        
+        # Find best model
+        best_model = min(performance.items(), key=lambda x: x[1]['rmse'])
+        logger.info(f"\n🏆 Best Model: {best_model[0].upper()} (RMSE: {best_model[1]['rmse']:.3f})")
         
         # Save models
-        logger.info("6. Saving Models")
-        logger.info("-" * 40)
+        logger.info("\n💾 STEP 6: Saving Models")
+        logger.info("-" * 80)
         
         # Save each model
         for name, model in models.items():
-            saver.save_model(model, f"{name}_model.pkl")
+            if name == "lstm" and TENSORFLOW_AVAILABLE:
+                saver.save_keras_model(model, f"{name}_model.h5")
+            else:
+                saver.save_model(model, f"{name}_model.pkl")
         
         # Save scaler and label encoders
         saver.save_scaler(preprocessor.scaler)
         saver.save_label_encoders(preprocessor.label_encoders)
         
         # Save metadata
-        training_date = datetime.now().strftime("%Y-%m-%d")
+        training_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         saver.save_metadata(
             performance,
             training_date,
             config.FEATURES,
-            config.TARGET
+            config.TARGET,
+            trainer.training_history
         )
         
         # Verify all files are created
-        logger.info("\n7. Verifying Model Files")
-        logger.info("-" * 40)
+        logger.info("\n✅ STEP 7: Verifying Model Files")
+        logger.info("-" * 80)
         
         expected_files = [
             "xgboost_model.pkl",
@@ -491,29 +716,42 @@ def main():
             "model_metadata.json"
         ]
         
-        missing_files = []
+        if TENSORFLOW_AVAILABLE:
+            expected_files.append("lstm_model.h5")
+        
+        all_files_exist = True
         for filename in expected_files:
             file_path = config.MODEL_PATH / filename
             if file_path.exists():
-                logger.info(f"✅ {filename}")
+                file_size = file_path.stat().st_size / 1024  # KB
+                logger.info(f"✅ {filename:<30} ({file_size:>8.1f} KB)")
             else:
                 logger.error(f"❌ {filename}")
-                missing_files.append(filename)
+                all_files_exist = False
         
-        if missing_files:
-            raise FileNotFoundError(f"Missing model files: {', '.join(missing_files)}")
+        if not all_files_exist:
+            raise FileNotFoundError("Some model files are missing!")
         
-        logger.info("\n" + "=" * 60)
-        logger.info("TRAINING COMPLETED SUCCESSFULLY")
-        logger.info("=" * 60)
-        logger.info("\nModels saved to: models/ directory")
-        logger.info("Application is now ready for production mode")
+        # Success message
+        logger.info("\n" + "=" * 80)
+        logger.info("🎉 TRAINING COMPLETED SUCCESSFULLY!")
+        logger.info("=" * 80)
+        logger.info(f"\nModels trained: {len(models)}")
+        logger.info(f"Models saved to: {config.MODEL_PATH.absolute()}/")
+        logger.info(f"Best model: {best_model[0].upper()} (RMSE: {best_model[1]['rmse']:.3f})")
+        logger.info("\n✅ Application is now ready for PRODUCTION mode")
+        logger.info("✅ All models available for predictions")
+        
+        if not TENSORFLOW_AVAILABLE:
+            logger.warning("\n⚠️ Note: LSTM model not trained (TensorFlow not installed)")
+            logger.warning("   Install TensorFlow to enable LSTM: pip install tensorflow")
         
         return True
         
     except Exception as e:
-        logger.error(f"\n❌ Training failed: {e}")
-        logger.error(f"Stack trace: {sys.exc_info()[2]}")
+        logger.error(f"\n❌ TRAINING FAILED: {e}")
+        import traceback
+        logger.error(f"Stack trace:\n{traceback.format_exc()}")
         return False
 
 

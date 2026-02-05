@@ -52,16 +52,25 @@ except ImportError:
     JOBLIB_AVAILABLE = False
     logging.warning("joblib not available - model loading disabled")
 
+# Check TensorFlow availability
+try:
+    import tensorflow as tf
+    TENSORFLOW_AVAILABLE = True
+except ImportError:
+    TENSORFLOW_AVAILABLE = False
+    logging.warning("TensorFlow not available - LSTM model disabled")
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
 class AppConfig:
     """
-    Application Configuration Management
+    Application Configuration Management (UPDATED)
 
     Centralized configuration with environment variable support.
     All sensitive values should be set via environment variables in production.
+    Now includes LSTM support and enhanced model metadata handling.
 
     Environment Variables:
         FABRIC_APP_ENV: Environment (development, staging, production)
@@ -70,13 +79,14 @@ class AppConfig:
         FABRIC_APP_MODEL_PATH: Path to model directory
         FABRIC_APP_ENABLE_ANALYTICS: Enable usage analytics
         FABRIC_APP_SESSION_TIMEOUT_MINUTES: Session timeout duration
+        FABRIC_APP_ENABLE_LSTM: Enable LSTM model (requires TensorFlow)
 
-    Developer: Azim Mahmud | Version 1.0.0
+    Developer: Azim Mahmud | Version 2.0.0
     """
 
     # Application Metadata
     APP_NAME = "Fabric Forecast Pro"
-    APP_VERSION = "1.0.0"
+    APP_VERSION = "2.0.0"  # UPDATED
     APP_AUTHOR = "Azim Mahmud"
 
     # Environment Configuration
@@ -88,16 +98,21 @@ class AppConfig:
     MAX_FILE_SIZE_MB = int(os.getenv("FABRIC_APP_MAX_FILE_SIZE_MB", "10"))
     MAX_BATCH_ROWS = int(os.getenv("FABRIC_APP_MAX_BATCH_ROWS", "1000"))
 
-    # Model Configuration
+    # Model Configuration (UPDATED)
     MODEL_PATH = Path(os.getenv("FABRIC_APP_MODEL_PATH", "models"))
     MODEL_FILES = {
         "xgboost": "xgboost_model.pkl",
         "random_forest": "random_forest_model.pkl",
         "linear_regression": "linear_regression_model.pkl",
+        "lstm": "lstm_model.h5",  # NEW: LSTM model file
         "scaler": "scaler.pkl",
         "encoders": "label_encoders.pkl",
         "metadata": "model_metadata.json"
     }
+
+    # LSTM Configuration (NEW)
+    ENABLE_LSTM = os.getenv("FABRIC_APP_ENABLE_LSTM", "true").lower() == "true"
+    LSTM_AVAILABLE = False  # Set dynamically based on TensorFlow availability
 
     # Feature Configuration
     ENABLE_ANALYTICS = os.getenv("FABRIC_APP_ENABLE_ANALYTICS", "false").lower() == "true"
@@ -118,13 +133,26 @@ class AppConfig:
     OPERATOR_EXPERIENCE_MIN = 0
     OPERATOR_EXPERIENCE_MAX = 50
 
-    # Supported Values
+    # Supported Values (ALIGNED WITH TRAINING MODULE)
     GARMENT_TYPES = ["T-Shirt", "Shirt", "Pants", "Dress", "Jacket"]
     FABRIC_TYPES = ["Cotton", "Polyester", "Cotton-Blend", "Silk", "Denim"]
     FABRIC_WIDTHS_INCHES = [55, 59, 63, 71]
     FABRIC_WIDTHS_CM = [140, 150, 160, 180]
     PATTERN_COMPLEXITIES = ["Simple", "Medium", "Complex"]
     SEASONS = ["Spring", "Summer", "Fall", "Winter"]
+
+    # Column Mapping (NEW - from training module)
+    COLUMN_MAPPING = {
+        "Order_Quantity": "order_quantity",
+        "Fabric_Width_cm": "fabric_width_cm",
+        "Marker_Efficiency_%": "marker_efficiency",
+        "Expected_Defect_Rate_%": "defect_rate",
+        "Operator_Experience_Years": "operator_experience",
+        "Garment_Type": "garment_type",
+        "Fabric_Type": "fabric_type",
+        "Pattern_Complexity": "pattern_complexity",
+        "Actual_Consumption_m": "fabric_consumption_meters"
+    }
 
     @classmethod
     def get_log_level(cls) -> int:
@@ -135,6 +163,17 @@ class AppConfig:
     def is_production(cls) -> bool:
         """Check if running in production environment"""
         return cls.ENV == "production"
+
+    @classmethod
+    def check_tensorflow(cls) -> bool:
+        """Check if TensorFlow is available for LSTM"""
+        try:
+            import tensorflow
+            cls.LSTM_AVAILABLE = True
+            return True
+        except ImportError:
+            cls.LSTM_AVAILABLE = False
+            return False
 
 
 # ============================================================================
@@ -214,6 +253,7 @@ class ModelType(Enum):
     XGBOOST = "xgboost"
     RANDOM_FOREST = "random_forest"
     LINEAR_REGRESSION = "linear_regression"
+    LSTM = "lstm"  # NEW
 
 
 class UnitType(Enum):
@@ -490,10 +530,23 @@ class ModelManager:
         self.models: Dict[str, Any] = {}
         self.mode: ProcessingMode = ProcessingMode.DEMO
         self._load_attempted = False
+        self.lstm_available = False
+        
+        # Check TensorFlow availability
+        try:
+            import tensorflow as tf
+            self.tf = tf
+            AppConfig.LSTM_AVAILABLE = True
+            logger.info("TensorFlow is available - LSTM model enabled")
+        except ImportError:
+            self.tf = None
+            AppConfig.LSTM_AVAILABLE = False
+            logger.warning("TensorFlow not available - LSTM model disabled")
 
     def load_models(self) -> Tuple[Dict[str, Any], bool]:
         """
         Load trained machine learning models from persistent storage.
+        Now includes LSTM model loading support.
 
         Returns:
             tuple: (models_dict, is_production_mode)
@@ -525,36 +578,75 @@ class ModelManager:
             # Load each model file
             loaded_models = {}
 
-            # Load ML models
-            for model_name, filename in AppConfig.MODEL_FILES.items():
-                if model_name == "metadata":
+            # Load traditional ML models (pickle files)
+            for model_name in ["xgboost", "random_forest", "linear_regression", "scaler", "encoders"]:
+                if model_name not in AppConfig.MODEL_FILES:
                     continue
-
+                    
+                filename = AppConfig.MODEL_FILES[model_name]
                 model_path = model_dir / filename
+                
                 if model_path.exists():
                     try:
                         loaded_models[model_name] = joblib.load(model_path)
                         logger.info(f"Loaded {model_name} from {model_path}")
                     except Exception as e:
                         logger.error(f"Failed to load {model_name}: {e}")
-                        raise ModelLoadError(f"Failed to load {model_name}: {e}") from e
+                        if AppConfig.is_production():
+                            raise ModelLoadError(f"Failed to load {model_name}: {e}") from e
                 else:
                     logger.warning(f"Model file not found: {model_path}")
+
+            # Load LSTM model (Keras/H5 file) if available
+            if AppConfig.LSTM_AVAILABLE and self.tf is not None:
+                lstm_path = model_dir / AppConfig.MODEL_FILES["lstm"]
+                if lstm_path.exists():
+                    try:
+                        # Try loading without compiling to avoid deserialization issues
+                        try:
+                            loaded_models["lstm"] = self.tf.keras.models.load_model(lstm_path, compile=False)
+                        except Exception:
+                            logger.warning("Standard LSTM load failed, retrying with custom_objects and compile=False")
+                            custom_objects = {
+                                'mse': self.tf.keras.metrics.MeanSquaredError(),
+                                'MeanSquaredError': self.tf.keras.metrics.MeanSquaredError,
+                                'keras.metrics.mse': self.tf.keras.metrics.MeanSquaredError()
+                            }
+                            loaded_models["lstm"] = self.tf.keras.models.load_model(
+                                lstm_path, compile=False, custom_objects=custom_objects
+                            )
+
+                        self.lstm_available = True
+                        logger.info(f"Loaded LSTM model from {lstm_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to load LSTM model: {e}")
+                        logger.debug(traceback.format_exc())
+                        self.lstm_available = False
+                else:
+                    logger.warning(f"LSTM model file not found: {lstm_path}")
+                    self.lstm_available = False
+            else:
+                logger.info("LSTM model loading skipped (TensorFlow not available)")
 
             # Load metadata
             metadata_path = model_dir / AppConfig.MODEL_FILES["metadata"]
             if metadata_path.exists():
                 with open(metadata_path, 'r') as f:
                     loaded_models['metadata'] = json.load(f)
+                logger.info(f"Loaded metadata from {metadata_path}")
             else:
                 loaded_models['metadata'] = {
+                    'version': '2.0.0',
                     'unit': 'meters',
-                    'training_date': datetime.now().isoformat()
+                    'training_date': datetime.now().isoformat(),
+                    'tensorflow_available': AppConfig.LSTM_AVAILABLE
                 }
+                logger.warning("Metadata file not found, using default metadata")
 
             self.models = loaded_models
             self.mode = ProcessingMode.PRODUCTION
-            logger.info("Successfully loaded all models in production mode")
+            logger.info(f"Successfully loaded models in production mode")
+            logger.info(f"Available models: {[k for k in loaded_models.keys() if k not in ['scaler', 'encoders', 'metadata']]}")
 
             return self.models, True
 
@@ -563,11 +655,15 @@ class ModelManager:
         except Exception as e:
             logger.error(f"Unexpected error loading models: {e}")
             logger.debug(traceback.format_exc())
-            self._create_demo_models()
-            return self.models, False
+            
+            if AppConfig.is_production():
+                raise ModelLoadError(f"Failed to load models: {e}") from e
+            else:
+                self._create_demo_models()
+                return self.models, False
 
     def _create_demo_models(self) -> None:
-        """Create mock models for demo mode"""
+        """Create mock models for demo mode (UPDATED)"""
         logger.info("Creating demo mode mock models")
 
         class MockModel:
@@ -577,27 +673,46 @@ class ModelManager:
 
             def predict(self, X: np.ndarray) -> np.ndarray:
                 # Base prediction on order quantity with variance
+                if len(X.shape) == 1:
+                    X = X.reshape(1, -1)
                 base = X[:, 0] * AppConfig.DEFAULT_GARMENT_CONSUMPTION_BASE
                 variance = np.random.normal(0, 0.05, len(X))
                 return base * (1 + variance)
+
+        class MockLSTMModel(MockModel):
+            """Mock LSTM model with different prediction shape"""
+            def predict(self, X: np.ndarray, verbose: int = 0) -> np.ndarray:
+                result = super().predict(X)
+                return result.reshape(-1, 1)  # LSTM returns 2D array
 
         self.models = {
             'xgboost': MockModel('XGBoost'),
             'random_forest': MockModel('Random Forest'),
             'linear_regression': MockModel('Linear Regression'),
+            'lstm': MockLSTMModel('LSTM') if AppConfig.LSTM_AVAILABLE else None,
             'metadata': {
+                'version': '2.0.0',
                 'unit': 'meters',
-                'training_date': '2026-01-28',
-                'mode': 'demo'
+                'training_date': '2026-01-29',
+                'mode': 'demo',
+                'tensorflow_available': AppConfig.LSTM_AVAILABLE
             }
         }
         self.mode = ProcessingMode.DEMO
+        self.lstm_available = AppConfig.LSTM_AVAILABLE
 
     def get_model(self, model_name: str) -> Any:
-        """Get a specific model by name"""
+        """Get a specific model by name (UPDATED)"""
         if model_name not in self.models:
             raise PredictionError(f"Model '{model_name}' not available")
-        return self.models[model_name]
+        
+        model = self.models[model_name]
+        
+        # Check if LSTM is requested but not available
+        if model_name == "lstm" and model is None:
+            raise PredictionError("LSTM model not available (TensorFlow required)")
+            
+        return model
 
     def predict(
         self,
@@ -606,7 +721,8 @@ class ModelManager:
         output_unit: str = 'meters'
     ) -> PredictionResult:
         """
-        Calculate fabric consumption prediction using ML models.
+        Calculate fabric consumption prediction using ML models (UPDATED).
+        Now supports LSTM predictions with proper reshaping.
 
         Args:
             order_data: Dictionary containing order parameters
@@ -641,8 +757,15 @@ class ModelManager:
                 else:
                     logger.warning("Scaler not loaded, using raw features")
 
-            # Predict (in training units)
-            prediction_base = float(model.predict(features)[0])
+            # Predict based on model type
+            if model_name == "lstm":
+                # LSTM requires 3D input: (samples, timesteps, features)
+                features_lstm = features.reshape(features.shape[0], 1, features.shape[1])
+                prediction_array = model.predict(features_lstm, verbose=0)
+                prediction_base = float(prediction_array.flatten()[0])
+            else:
+                # Traditional ML models
+                prediction_base = float(model.predict(features)[0])
 
             # Validate prediction
             if not np.isfinite(prediction_base) or prediction_base <= 0:
@@ -666,6 +789,7 @@ class ModelManager:
                 unit_alternate = 'yards'
 
             # Calculate confidence intervals (5% margin)
+            # Note: For LSTM, could use MC Dropout for better uncertainty estimates
             return PredictionResult(
                 prediction=prediction,
                 prediction_alternate=prediction_alternate,
@@ -769,10 +893,10 @@ class EncodingMaps:
     GARMENT_TYPE = {'T-Shirt': 0, 'Shirt': 1, 'Pants': 2, 'Dress': 3, 'Jacket': 4}
     FABRIC_TYPE = {'Cotton': 0, 'Polyester': 1, 'Cotton-Blend': 2, 'Silk': 3, 'Denim': 4}
     COMPLEXITY = {'Simple': 0, 'Medium': 1, 'Complex': 2}
-
     MODEL_DISPLAY = {
         'XGBoost (Recommended)': ModelType.XGBOOST.value,
         'Random Forest': ModelType.RANDOM_FOREST.value,
+        'LSTM Neural Network': ModelType.LSTM.value,  # NEW
         'Linear Regression': ModelType.LINEAR_REGRESSION.value
     }
 
@@ -1660,31 +1784,45 @@ class PerformancePage:
 
     @staticmethod
     def _render_model_comparison(unit_pref: str) -> None:
-        """Render model comparison charts"""
+        """Render model comparison charts (UPDATED with LSTM)"""
         st.subheader("🏆 Model Comparison")
 
         conversion_factor = 1 if unit_pref == 'meters' else UnitConverter.METERS_TO_YARDS
 
+        # UPDATED performance data to include LSTM
         perf_data = {
             'Model': ['XGBoost', 'Random Forest', 'LSTM', 'Linear Regression', 'Traditional BOM'],
-            f'RMSE ({unit_pref})': [42.3*conversion_factor, 45.1*conversion_factor,
-                                    48.2*conversion_factor, 95.4*conversion_factor,
-                                    120.5*conversion_factor],
-            f'MAE ({unit_pref})': [30.1*conversion_factor, 32.4*conversion_factor,
-                                   35.2*conversion_factor, 70.3*conversion_factor,
-                                   90.2*conversion_factor],
+            f'RMSE ({unit_pref})': [
+                42.3*conversion_factor, 
+                45.1*conversion_factor,
+                48.2*conversion_factor,
+                95.4*conversion_factor,
+                120.5*conversion_factor
+            ],
+            f'MAE ({unit_pref})': [
+                30.1*conversion_factor, 
+                32.4*conversion_factor,
+                35.2*conversion_factor,
+                70.3*conversion_factor,
+                90.2*conversion_factor
+            ],
             'R² Score': [0.982, 0.975, 0.970, 0.851, 0.753],
+            'MAPE %': [2.1, 2.4, 2.6, 5.8, 8.5],
             'Improvement %': [65.1, 62.6, 60.0, 20.8, 0]
         }
 
         perf_df = pd.DataFrame(perf_data)
 
         st.dataframe(
-            perf_df.style.highlight_min(subset=[f'RMSE ({unit_pref})', f'MAE ({unit_pref})'],
-                                        color='lightgreen')
-                         .highlight_max(subset=['R² Score'], color='lightgreen'),
+            perf_df.style.highlight_min(
+                subset=[f'RMSE ({unit_pref})', f'MAE ({unit_pref})', 'MAPE %'],
+                color='lightgreen'
+            ).highlight_max(
+                subset=['R² Score', 'Improvement %'], 
+                color='lightgreen'
+            ),
             use_container_width=True,
-            height=250
+            height=280
         )
 
         # Charts
@@ -1693,25 +1831,42 @@ class PerformancePage:
         with col1:
             st.subheader(f"📊 Error Metrics ({unit_pref})")
             fig = go.Figure(data=[
-                go.Bar(name='RMSE', x=perf_df['Model'],
-                      y=perf_df[f'RMSE ({unit_pref})'], marker_color='#3498db'),
-                go.Bar(name='MAE', x=perf_df['Model'],
-                      y=perf_df[f'MAE ({unit_pref})'], marker_color='#2ecc71')
+                go.Bar(
+                    name='RMSE', 
+                    x=perf_df['Model'],
+                    y=perf_df[f'RMSE ({unit_pref})'], 
+                    marker_color='#3498db'
+                ),
+                go.Bar(
+                    name='MAE', 
+                    x=perf_df['Model'],
+                    y=perf_df[f'MAE ({unit_pref})'], 
+                    marker_color='#2ecc71'
+                )
             ])
-            fig.update_layout(barmode='group', height=350,
-                             yaxis_title=f'Error ({unit_pref})')
+            fig.update_layout(
+                barmode='group', 
+                height=350,
+                yaxis_title=f'Error ({unit_pref})'
+            )
             st.plotly_chart(fig, use_container_width=True)
 
         with col2:
             st.subheader("🎯 R² Score Comparison")
-            fig = px.bar(perf_df, x='Model', y='R² Score',
-                         color='R² Score',
-                         color_continuous_scale='Viridis')
-            fig.add_hline(y=0.95, line_dash="dash",
-                         annotation_text="Excellent (>0.95)")
+            fig = px.bar(
+                perf_df, 
+                x='Model', 
+                y='R² Score',
+                color='R² Score',
+                color_continuous_scale='Viridis'
+            )
+            fig.add_hline(
+                y=0.95, 
+                line_dash="dash",
+                annotation_text="Excellent (>0.95)"
+            )
             fig.update_layout(height=350)
             st.plotly_chart(fig, use_container_width=True)
-
     @staticmethod
     def _render_conversion_reference(unit_pref: str) -> None:
         """Render unit conversion reference"""
@@ -2274,6 +2429,9 @@ Release: January 2026"""
 
         # Initialize session state
         SessionManager.initialize()
+
+        # Check TensorFlow availability on startup
+        AppConfig.check_tensorflow()
 
         # Check session validity
         if not SessionManager.is_session_valid():

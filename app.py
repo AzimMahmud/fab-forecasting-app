@@ -1548,13 +1548,35 @@ class SinglePredictionPage:
             )
 
         with col4:
-            potential_savings = abs(bom_estimate - result.prediction) * fabric_cost
-            st.metric(
-                label="💵 Potential Savings",
-                value=f"${potential_savings:.2f}",
-                delta="vs Traditional BOM"
-            )
-            st.session_state.total_savings += potential_savings
+            raw_diff = bom_estimate - result.prediction  # positive = AI needs less (true saving)
+            if raw_diff > 0:
+                # AI predicts LESS fabric than BOM → genuine saving
+                potential_savings = raw_diff * fabric_cost
+                savings_label = "💵 Potential Savings"
+                savings_delta = f"+${potential_savings:.2f} vs BOM"
+                savings_help  = f"AI needs {raw_diff:.1f} {unit_pref} less than BOM — real cost saving."
+                st.metric(
+                    label=savings_label,
+                    value=f"${potential_savings:.2f}",
+                    delta=savings_delta,
+                    help=savings_help
+                )
+                st.session_state.total_savings += potential_savings
+            else:
+                # AI predicts MORE fabric than BOM → BOM would under-order
+                shortfall_cost = abs(raw_diff) * fabric_cost
+                savings_help = (
+                    f"AI needs {abs(raw_diff):.1f} {unit_pref} MORE than BOM. "
+                    f"No savings — ordering only the BOM amount risks a "
+                    f"${shortfall_cost:.2f} emergency re-order."
+                )
+                st.metric(
+                    label="⚠️ BOM Shortfall Risk",
+                    value=f"${shortfall_cost:.2f}",
+                    delta=f"{abs(raw_diff):.1f} {unit_pref} under-ordered",
+                    delta_color="inverse",
+                    help=savings_help
+                )
 
         # Confidence interval chart
         st.markdown("---")

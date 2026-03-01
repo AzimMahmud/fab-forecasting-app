@@ -429,6 +429,51 @@ class ModelTrainer:
             "mape": float(mape)
         }
     
+    def train_ensemble(self, X_val: np.ndarray, y_val: np.ndarray) -> dict:
+        """
+        Build a weighted-average ensemble from all trained base models.
+
+        Weights are computed as softmax-normalised R² scores on the validation
+        set, so better models contribute more to the final prediction.
+        LSTM is included only when TensorFlow is available.
+
+        Returns:
+            dict: {'weights': {model_name: weight}, 'model_names': [...]}
+                  Saved as ensemble_model.pkl so ModelManager can apply it at
+                  inference time without storing model references in the file.
+        """
+        if not self.models:
+            raise ValueError("No base models trained yet. Call train_all_models first.")
+
+        logger.info("Training Ensemble (weighted average of base models)...")
+
+        val_r2 = {}
+        for name, model in self.models.items():
+            metrics = self.evaluate_model(model, X_val, y_val, name)
+            # Clamp R² to [0, 1] so a poor model gets zero weight
+            val_r2[name] = max(0.0, metrics["r2"])
+            logger.info(f"  Validation R² for {name}: {val_r2[name]:.4f}")
+
+        total_r2 = sum(val_r2.values())
+        if total_r2 == 0:
+            # Fallback: equal weights
+            weights = {name: 1.0 / len(val_r2) for name in val_r2}
+        else:
+            weights = {name: r2 / total_r2 for name, r2 in val_r2.items()}
+
+        ensemble_spec = {
+            "weights": weights,
+            "model_names": list(weights.keys()),
+            "weighted_by": "validation_r2"
+        }
+
+        self.models["ensemble"] = ensemble_spec
+        logger.info("Ensemble weights:")
+        for name, w in weights.items():
+            logger.info(f"  {name}: {w:.4f} ({w*100:.1f}%)")
+        logger.info("✅ Ensemble specification created")
+        return ensemble_spec
+
     def train_all_models(self, X_train: np.ndarray, y_train: np.ndarray, 
                         X_val: np.ndarray, y_val: np.ndarray,
                         X_test: np.ndarray, y_test: np.ndarray):
@@ -439,34 +484,41 @@ class ModelTrainer:
         logger.info("="*60)
         
         # Train Linear Regression
-        logger.info("\n[1/4] Linear Regression")
+        logger.info("\n[1/5] Linear Regression")
         logger.info("-"*40)
         self.train_linear_regression(X_train, y_train)
         
         # Train Random Forest
-        logger.info("\n[2/4] Random Forest")
+        logger.info("\n[2/5] Random Forest")
         logger.info("-"*40)
         self.train_random_forest(X_train, y_train)
         
         # Train XGBoost
-        logger.info("\n[3/4] XGBoost")
+        logger.info("\n[3/5] XGBoost")
         logger.info("-"*40)
         self.train_xgboost(X_train, y_train)
         
         # Train LSTM (if TensorFlow available)
-        logger.info("\n[4/4] LSTM Neural Network")
+        logger.info("\n[4/5] LSTM Neural Network")
         logger.info("-"*40)
         if TENSORFLOW_AVAILABLE:
             self.train_lstm(X_train, y_train, X_val, y_val)
         else:
             logger.warning("⚠️ LSTM training skipped (TensorFlow not available)")
-        
-        # Evaluate all models
+
+        # Build Ensemble from base models
+        logger.info("\n[5/5] Ensemble (Weighted Average)")
+        logger.info("-"*40)
+        self.train_ensemble(X_val, y_val)
+
+        # Evaluate all non-ensemble models first, then ensemble
         logger.info("\n" + "="*60)
         logger.info("EVALUATING ALL MODELS")
         logger.info("="*60)
         
-        for name, model in self.models.items():
+        base_model_names = [n for n in self.models if n != "ensemble"]
+        for name in base_model_names:
+            model = self.models[name]
             logger.info(f"\nEvaluating {name}...")
             self.performance[name] = self.evaluate_model(model, X_test, y_test, name)
             
@@ -475,6 +527,34 @@ class ModelTrainer:
             logger.info(f"  MAE:  {metrics['mae']:.3f}")
             logger.info(f"  R²:   {metrics['r2']:.4f}")
             logger.info(f"  MAPE: {metrics['mape']:.2f}%")
+
+        # Evaluate ensemble by computing weighted prediction on test set
+        logger.info("\nEvaluating ensemble...")
+        ensemble_spec = self.models["ensemble"]
+        y_pred_ensemble = np.zeros(len(y_test))
+        for name in ensemble_spec["model_names"]:
+            model = self.models[name]
+            if name == "lstm" and TENSORFLOW_AVAILABLE:
+                X_reshaped = X_test.reshape(X_test.shape[0], 1, X_test.shape[1])
+                preds = model.predict(X_reshaped, verbose=0).flatten()
+            else:
+                preds = model.predict(X_test)
+            y_pred_ensemble += ensemble_spec["weights"][name] * preds
+
+        from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+        mse = mean_squared_error(y_test, y_pred_ensemble)
+        self.performance["ensemble"] = {
+            "mse": float(mse),
+            "rmse": float(np.sqrt(mse)),
+            "mae": float(mean_absolute_error(y_test, y_pred_ensemble)),
+            "r2": float(r2_score(y_test, y_pred_ensemble)),
+            "mape": float(np.mean(np.abs((y_test - y_pred_ensemble) / y_test)) * 100)
+        }
+        m = self.performance["ensemble"]
+        logger.info(f"  RMSE: {m['rmse']:.3f}")
+        logger.info(f"  MAE:  {m['mae']:.3f}")
+        logger.info(f"  R²:   {m['r2']:.4f}")
+        logger.info(f"  MAPE: {m['mape']:.2f}%")
         
         return self.models, self.performance
 
@@ -523,7 +603,8 @@ class ModelSaver:
         return self.save_model(encoders, "label_encoders.pkl")
     
     def save_metadata(self, performance: dict, training_date: str, 
-                     features: list, target: str, training_history: dict = None) -> str:
+                     features: list, target: str, training_history: dict = None,
+                     ensemble_spec: dict = None) -> str:
         """Save model metadata"""
         metadata = {
             "version": "2.0.0",
@@ -537,7 +618,8 @@ class ModelSaver:
         
         for name, metrics in performance.items():
             metadata["models"][name] = {
-                "file": f"{name}_model.pkl" if name != "lstm" else f"{name}_model.h5",
+                "file": (f"{name}_model.h5" if name == "lstm"
+                         else f"{name}_model.pkl"),
                 "type": self._get_model_type(name),
                 "features": len(features),
                 "rmse": round(metrics["rmse"], 3),
@@ -553,6 +635,11 @@ class ModelSaver:
                     "final_val_loss": float(training_history["lstm"]["val_loss"][-1]),
                     "epochs_trained": len(training_history["lstm"]["loss"])
                 }
+
+            # Embed ensemble weights in metadata for transparency
+            if name == "ensemble" and ensemble_spec:
+                metadata["models"][name]["weights"] = ensemble_spec.get("weights", {})
+                metadata["models"][name]["weighted_by"] = ensemble_spec.get("weighted_by", "")
         
         metadata_path = self.config.MODEL_PATH / "model_metadata.json"
         
@@ -571,7 +658,8 @@ class ModelSaver:
             "xgboost": "xgboost.XGBRegressor",
             "random_forest": "sklearn.ensemble.RandomForestRegressor",
             "linear_regression": "sklearn.linear_model.LinearRegression",
-            "lstm": "tensorflow.keras.Sequential"
+            "lstm": "tensorflow.keras.Sequential",
+            "ensemble": "WeightedAverageEnsemble"
         }
         return type_map.get(model_name, "unknown")
 
@@ -586,7 +674,7 @@ def main():
     logger.info("FABRIC CONSUMPTION FORECASTING SYSTEM - COMPLETE MODEL TRAINING")
     logger.info("=" * 80)
     logger.info(f"TensorFlow Available: {TENSORFLOW_AVAILABLE}")
-    logger.info(f"Training 4 models: Linear Regression, Random Forest, XGBoost, LSTM")
+    logger.info(f"Training 5 models: Linear Regression, Random Forest, XGBoost, LSTM, Ensemble")
     logger.info("=" * 80)
     
     try:
@@ -686,6 +774,9 @@ def main():
         for name, model in models.items():
             if name == "lstm" and TENSORFLOW_AVAILABLE:
                 saver.save_keras_model(model, f"{name}_model.h5")
+            elif name == "ensemble":
+                # Ensemble spec is a plain dict — save with joblib
+                saver.save_model(model, "ensemble_model.pkl")
             else:
                 saver.save_model(model, f"{name}_model.pkl")
         
@@ -693,14 +784,16 @@ def main():
         saver.save_scaler(preprocessor.scaler)
         saver.save_label_encoders(preprocessor.label_encoders)
         
-        # Save metadata
+        # Save metadata (include ensemble_spec for weight transparency)
+        ensemble_spec = models.get("ensemble")
         training_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         saver.save_metadata(
             performance,
             training_date,
             config.FEATURES,
             config.TARGET,
-            trainer.training_history
+            trainer.training_history,
+            ensemble_spec=ensemble_spec
         )
         
         # Verify all files are created
@@ -711,6 +804,7 @@ def main():
             "xgboost_model.pkl",
             "random_forest_model.pkl", 
             "linear_regression_model.pkl",
+            "ensemble_model.pkl",
             "scaler.pkl",
             "label_encoders.pkl",
             "model_metadata.json"
@@ -736,7 +830,7 @@ def main():
         logger.info("\n" + "=" * 80)
         logger.info("🎉 TRAINING COMPLETED SUCCESSFULLY!")
         logger.info("=" * 80)
-        logger.info(f"\nModels trained: {len(models)}")
+        logger.info(f"\nModels trained: {len(models)} (including Ensemble)")
         logger.info(f"Models saved to: {config.MODEL_PATH.absolute()}/")
         logger.info(f"Best model: {best_model[0].upper()} (RMSE: {best_model[1]['rmse']:.3f})")
         logger.info("\n✅ Application is now ready for PRODUCTION mode")

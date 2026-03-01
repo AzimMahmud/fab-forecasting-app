@@ -847,9 +847,18 @@ class ModelManager:
                 # Traditional ML models
                 prediction_base = float(model.predict(features)[0])
 
-            # Validate prediction
-            if not np.isfinite(prediction_base) or prediction_base <= 0:
-                raise PredictionError(f"Invalid prediction value: {prediction_base}")
+            # Validate prediction — Linear Regression can extrapolate below zero
+            # for small/unusual orders. Floor at a physically meaningful minimum
+            # (1 meter) rather than crashing, and log a warning.
+            if not np.isfinite(prediction_base):
+                raise PredictionError(f"Model returned non-finite prediction: {prediction_base}")
+            if prediction_base <= 0:
+                logger.warning(
+                    f"{model_name} predicted {prediction_base:.3f} m (<=0) for this input — "
+                    f"likely extrapolation outside training range. Clamping to minimum."
+                )
+                # Floor = order_quantity * 0.5 m/garment (absolute bare minimum)
+                prediction_base = max(1.0, order_data.get('order_quantity', 1) * 0.5)
 
             # Convert to meters first (if needed)
             metadata_unit = self.models.get('metadata', {}).get('unit', 'meters')
@@ -1484,6 +1493,17 @@ class SinglePredictionPage:
             SessionManager.update_activity()
 
             UIHelpers.show_success("Prediction Complete!")
+
+            # Warn if order quantity is far below training distribution
+            # (heuristic: below 25th percentile of typical training data)
+            if int(order_quantity) < 500 and model_choice not in ['LSTM Neural Network', 'Ensemble ⭐ (Best Combined)']:
+                st.warning(
+                    f"⚠️ **Extrapolation Warning:** Order quantity {int(order_quantity)} is small relative to "
+                    f"the training data range. **{model_choice}** may be unreliable here — "
+                    f"consider using **LSTM Neural Network** or **Ensemble** for small orders, "
+                    f"or retrain on a larger dataset."
+                )
+
             SinglePredictionPage._render_results(
                 result, order_input, fabric_width_in, fabric_width_cm,
                 unit_pref, show_dual_units, model_choice

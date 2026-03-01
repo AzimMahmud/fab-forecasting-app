@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "training_date": "2026-02-05 21:48:36",
+  "training_date": "2026-03-01 18:12:19",
   "unit": "meters",
   "models": {
     "linear_regression": {
@@ -34,15 +34,31 @@
       "file": "lstm_model.h5",
       "type": "tensorflow.keras.Sequential",
       "features": 8,
-      "rmse": 2039.292,
-      "mae": 1597.022,
-      "r2": 0.8634,
-      "mape": 35.43,
+      "rmse": 2044.343,
+      "mae": 1594.769,
+      "r2": 0.8628,
+      "mape": 38.12,
       "training_history": {
-        "final_train_loss": 4457471.5,
-        "final_val_loss": 3557396.75,
+        "final_train_loss": 4800305.5,
+        "final_val_loss": 3666485.25,
         "epochs_trained": 50
       }
+    },
+    "ensemble": {
+      "file": "ensemble_model.pkl",
+      "type": "WeightedAverageEnsemble",
+      "features": 8,
+      "rmse": 1593.538,
+      "mae": 1091.144,
+      "r2": 0.9166,
+      "mape": 27.21,
+      "weights": {
+        "linear_regression": 0.23868256100741725,
+        "random_forest": 0.25105494616625595,
+        "xgboost": 0.2650848686252856,
+        "lstm": 0.24517762420104125
+      },
+      "weighted_by": "validation_r2"
     }
   },
   "feature_names": [

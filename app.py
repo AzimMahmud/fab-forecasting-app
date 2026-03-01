@@ -968,11 +968,25 @@ class DataGenerator:
 # ============================================================================
 
 class EncodingMaps:
-    """Categorical encoding mappings for ML models"""
+    """
+    Categorical encoding mappings for ML models.
 
-    GARMENT_TYPE = {'T-Shirt': 0, 'Shirt': 1, 'Pants': 2, 'Dress': 3, 'Jacket': 4}
-    FABRIC_TYPE = {'Cotton': 0, 'Polyester': 1, 'Cotton-Blend': 2, 'Silk': 3, 'Denim': 4}
-    COMPLEXITY = {'Simple': 0, 'Medium': 1, 'Complex': 2}
+    CRITICAL: These values MUST match sklearn's LabelEncoder, which sorts
+    categories ALPHABETICALLY — not in the order they appear in the config list.
+    Mismatched encodings silently pass wrong garment/complexity types to the
+    model, causing wildly incorrect predictions.
+
+    To verify: LabelEncoder().fit(categories).transform(categories)
+    """
+
+    # Alphabetical order: Dress=0, Jacket=1, Pants=2, Shirt=3, T-Shirt=4
+    GARMENT_TYPE = {'Dress': 0, 'Jacket': 1, 'Pants': 2, 'Shirt': 3, 'T-Shirt': 4}
+
+    # Alphabetical order: Cotton=0, Cotton-Blend=1, Denim=2, Polyester=3, Silk=4
+    FABRIC_TYPE = {'Cotton': 0, 'Cotton-Blend': 1, 'Denim': 2, 'Polyester': 3, 'Silk': 4}
+
+    # Alphabetical order: Complex=0, Medium=1, Simple=2
+    COMPLEXITY = {'Complex': 0, 'Medium': 1, 'Simple': 2}
     MODEL_DISPLAY = {
         'Ensemble ⭐ (Best Combined)': ModelType.ENSEMBLE.value,
         'XGBoost (Recommended)': ModelType.XGBOOST.value,
@@ -1428,6 +1442,25 @@ class SinglePredictionPage:
 
             order_input.validate()
 
+            # Encode categoricals — prefer saved label_encoders.pkl as the
+            # authoritative source so inference always matches training exactly.
+            encoders = model_mgr.models.get('encoders')
+            if encoders and isinstance(encoders, dict):
+                try:
+                    garment_enc = int(encoders['garment_type'].transform([order_input.garment_type])[0])
+                    fabric_enc  = int(encoders['fabric_type'].transform([order_input.fabric_type])[0])
+                    complex_enc = int(encoders['pattern_complexity'].transform([order_input.pattern_complexity])[0])
+                    logger.info("Using saved label_encoders.pkl for categorical encoding")
+                except Exception as enc_err:
+                    logger.warning(f"label_encoders.pkl failed ({enc_err}), falling back to hardcoded maps")
+                    garment_enc = EncodingMaps.GARMENT_TYPE[order_input.garment_type]
+                    fabric_enc  = EncodingMaps.FABRIC_TYPE[order_input.fabric_type]
+                    complex_enc = EncodingMaps.COMPLEXITY[order_input.pattern_complexity]
+            else:
+                garment_enc = EncodingMaps.GARMENT_TYPE[order_input.garment_type]
+                fabric_enc  = EncodingMaps.FABRIC_TYPE[order_input.fabric_type]
+                complex_enc = EncodingMaps.COMPLEXITY[order_input.pattern_complexity]
+
             # Prepare data for prediction
             order_data = {
                 'order_quantity': order_input.order_quantity,
@@ -1435,9 +1468,9 @@ class SinglePredictionPage:
                 'marker_efficiency': order_input.marker_efficiency,
                 'defect_rate': order_input.defect_rate,
                 'operator_experience': order_input.operator_experience,
-                'garment_type_encoded': EncodingMaps.GARMENT_TYPE[order_input.garment_type],
-                'fabric_type_encoded': EncodingMaps.FABRIC_TYPE[order_input.fabric_type],
-                'pattern_complexity_encoded': EncodingMaps.COMPLEXITY[order_input.pattern_complexity]
+                'garment_type_encoded': garment_enc,
+                'fabric_type_encoded': fabric_enc,
+                'pattern_complexity_encoded': complex_enc
             }
 
             # Get prediction

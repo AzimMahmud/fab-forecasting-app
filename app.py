@@ -3477,7 +3477,7 @@ def check_and_train_models_if_needed():
     If so, automatically run train_models.py to train the models.
 
     Returns:
-        bool: True if models are ready, False otherwise
+        tuple: (success: bool, error_message: str or None)
     """
     model_path = AppConfig.MODEL_PATH
 
@@ -3503,7 +3503,7 @@ def check_and_train_models_if_needed():
     # If all required files exist, models are ready
     if not missing_files:
         logger.info("✅ All required model files found")
-        return True
+        return True, None
 
     # Models are missing - need to train
     logger.warning("⚠️  Model files missing or models folder is empty")
@@ -3512,20 +3512,72 @@ def check_and_train_models_if_needed():
 
     # Check if training data exists
     training_data = Path("generated_data/production_dataset_5000_orders_meters.csv")
+
+    # Get current working directory for debugging
+    cwd = Path.cwd()
+    logger.info(f"Current working directory: {cwd}")
+    logger.info(f"Looking for training data at: {cwd / training_data}")
+
     if not training_data.exists():
-        logger.error(f"❌ Training data not found: {training_data}")
-        logger.error("Please run 'python data_generation_script.py' first to generate the training data.")
-        return False
+        # Check if generated_data folder exists at all
+        gen_data_path = Path("generated_data")
+        if not gen_data_path.exists():
+            error_msg = f"""
+❌ **Training data folder not found**
+
+**Details:**
+- Working directory: `{cwd}`
+- Looking for: `generated_data/production_dataset_5000_orders_meters.csv`
+- The `generated_data/` folder does not exist
+
+**For Streamlit Cloud deployment:**
+1. Make sure `generated_data/` folder is in your git repository
+2. The data files should be committed to git
+3. Run `python data_generation_script.py` locally first
+4. Commit and push the generated_data folder
+"""
+            logger.error(error_msg)
+            return False, error_msg
+        else:
+            # Folder exists but file is missing
+            existing_files = list(gen_data_path.glob("*.csv"))
+            error_msg = f"""
+❌ **Training data file not found**
+
+**Details:**
+- Working directory: `{cwd}`
+- Looking for: `{training_data}`
+- `generated_data/` folder exists
+- CSV files found: {[f.name for f in existing_files]}
+
+**Solution:**
+Run `python data_generation_script.py` to generate the required training data
+"""
+            logger.error(error_msg)
+            return False, error_msg
 
     # Run train_models.py
     try:
         logger.info("Running train_models.py - this may take a few minutes...")
+
+        # Use the script path directly for better compatibility
+        script_path = Path(__file__).parent / "train_models.py"
+        if not script_path.exists():
+            error_msg = f"❌ train_models.py not found at {script_path}"
+            logger.error(error_msg)
+            return False, error_msg
+
+        logger.info(f"Training script path: {script_path}")
+
         result = subprocess.run(
-            [sys.executable, "train_models.py"],
+            [sys.executable, str(script_path)],
             capture_output=True,
             text=True,
-            timeout=600  # 10 minutes timeout
+            timeout=600,  # 10 minutes timeout
+            cwd=str(cwd)  # Explicitly set working directory
         )
+
+        logger.info(f"Training return code: {result.returncode}")
 
         if result.returncode == 0:
             logger.info("✅ Model training completed successfully!")
@@ -3537,21 +3589,100 @@ def check_and_train_models_if_needed():
                     still_missing.append(file)
 
             if still_missing:
-                logger.error(f"❌ Training completed but files still missing: {still_missing}")
-                return False
+                error_msg = f"""
+❌ **Training completed but model files are missing**
 
-            return True
+**Details:**
+- Training script ran successfully
+- But these files were not created: `{still_missing}`
+- Check models folder: `{model_path}`
+
+**This might indicate:**
+- Permissions issue in models folder
+- Disk space issue on Streamlit Cloud
+- Training script error (check logs below)
+
+**Training output:**
+```
+{result.stdout[-1000:] if len(result.stdout) > 1000 else result.stdout}
+```
+"""
+                logger.error(error_msg)
+                return False, error_msg
+
+            return True, None
+
         else:
-            logger.error(f"❌ Model training failed with return code: {result.returncode}")
-            logger.error(f"Error output:\n{result.stderr}")
-            return False
+            error_msg = f"""
+❌ **Model training failed**
+
+**Details:**
+- Return code: `{result.returncode}`
+- Working directory: `{cwd}`
+- Script path: `{script_path}`
+
+**Error output:**
+```
+{result.stderr[-2000:] if len(result.stderr) > 2000 else result.stderr}
+```
+
+**Standard output:**
+```
+{result.stdout[-1000:] if len(result.stdout) > 1000 else result.stdout}
+```
+"""
+            logger.error(error_msg)
+            return False, error_msg
 
     except subprocess.TimeoutExpired:
-        logger.error("❌ Model training timed out after 10 minutes")
-        return False
+        error_msg = """
+❌ **Model training timed out**
+
+Training took longer than 10 minutes and was terminated.
+
+**Possible causes:**
+- TensorFlow LSTM training is taking too long
+- System resources are limited
+- Large dataset (5000 rows) with complex models
+
+**Solutions:**
+1. Increase timeout in app.py check_and_train_models_if_needed()
+2. Reduce dataset size or model complexity
+3. Train locally and upload models folder to git
+"""
+        logger.error(error_msg)
+        return False, error_msg
+
+    except PermissionError as e:
+        error_msg = f"""
+❌ **Permission error when running training**
+
+**Error:** {e}
+
+**This usually happens on Streamlit Cloud due to sandboxing.**
+
+**Recommended solution:**
+1. Train models locally: `python train_models.py`
+2. Commit the `models/` folder to your git repository
+3. Deploy to Streamlit Cloud with pre-trained models
+"""
+        logger.error(error_msg)
+        return False, error_msg
+
     except Exception as e:
-        logger.error(f"❌ Error running train_models.py: {e}")
-        return False
+        import traceback
+        error_msg = f"""
+❌ **Unexpected error during training**
+
+**Error:** {e}
+
+**Traceback:**
+```
+{traceback.format_exc()}
+```
+"""
+        logger.error(error_msg)
+        return False, error_msg
 
 
 # ============================================================================
@@ -3595,10 +3726,51 @@ Release: January 2026"""
             SessionManager.initialize()
 
         # Check and train models if needed (auto-train on first run)
-        if not check_and_train_models_if_needed():
-            st.error("❌ Failed to initialize models. Please check the logs for details.")
-            st.error("Ensure 'generated_data/production_dataset_5000_orders_meters.csv' exists.")
-            st.error("Run 'python data_generation_script.py' first if the data file is missing.")
+        model_check_success, model_check_error = check_and_train_models_if_needed()
+
+        if not model_check_success:
+            # Display detailed error in the UI
+            st.error("❌ **Failed to initialize models**")
+
+            if model_check_error:
+                st.markdown(model_check_error)
+
+            # Show troubleshooting section
+            with st.expander("🔧 **Troubleshooting Steps**", expanded=True):
+                st.markdown("""
+### For Streamlit Cloud Deployment:
+
+**Option 1: Pre-train models locally (Recommended)**
+```bash
+# 1. Generate training data
+python data_generation_script.py
+
+# 2. Train models
+python train_models.py
+
+# 3. Commit and push to git
+git add generated_data/ models/
+git commit -m "Add training data and trained models"
+git push
+```
+
+**Option 2: Include data generation in deployment**
+- Ensure `generated_data/` folder is committed to git
+- The app will try to train models on startup (may take 5-10 minutes)
+- Note: This may not work due to Streamlit Cloud sandboxing restrictions
+
+### For Local Development:
+1. Make sure you're in the project directory
+2. Run: `python data_generation_script.py`
+3. Run: `python train_models.py`
+4. Then run: `streamlit run app.py`
+
+### Common Issues:
+- **Missing generated_data folder**: Run `python data_generation_script.py`
+- **Permission errors on Streamlit Cloud**: Train locally and commit models/ folder
+- **Timeout errors**: Models take too long to train - use pre-trained models
+""")
+
             st.stop()
 
         # Load models

@@ -86,16 +86,36 @@ Thumbs.db
 # Project specific
 *.log
 logs/
-# Uncomment next line if you want to ignore trained models
-# models/*.pkl
-!models/.gitkeep
-# Ignore generated data but keep data generation script
-generated_data/*.csv
-generated_data/*.xlsx
-generated_data/*.json
-!generated_data/
+
+# ============================================================================
+# STREAMLIT CLOUD DEPLOYMENT: Important!
+# ============================================================================
+# For Streamlit Cloud deployment, we NEED to commit:
+# - models/ folder (trained models)
+# - generated_data/ folder (training data)
+#
+# The patterns below ONLY ignore local/dev files, NOT production files
+# ============================================================================
+
+# Models: Keep trained models for production deployment
+# Only ignore models/.gitkeep (we want actual model files)
+models/.gitkeep
+
+# Generated Data: Keep production datasets for deployment
+# Only ignore demo/test datasets locally, keep production datasets
+generated_data/*demo*.csv
+generated_data/*demo*.txt
+!generated_data/production_*.csv
+!generated_data/production_*.txt
+!generated_data/training_*.csv
+!generated_data/training_*.txt
+!generated_data/batch_prediction_template.csv
+
+# Ignore other CSV/JSON files in root (but allow in generated_data/)
 *.csv
 *.xlsx
 *.json
+!generated_data/*.csv
+!generated_data/*.json
 !model_metadata.json
 !package.json

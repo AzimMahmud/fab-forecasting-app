@@ -1,0 +1,11 @@
+Order_ID,Order_Quantity,Garment_Type,Fabric_Type,Fabric_Width_inches,Pattern_Complexity,Season,Marker_Efficiency_%,Expected_Defect_Rate_%,Operator_Experience_Years
+ORD_000001,1000,T-Shirt,Cotton,63,Simple,Spring,85,2.0,5
+ORD_000002,1500,Shirt,Polyester,59,Medium,Summer,88,3.0,8
+ORD_000003,2000,Pants,Denim,63,Complex,Fall,82,4.0,3
+ORD_000004,800,Dress,Silk,55,Medium,Winter,90,1.5,12
+ORD_000005,2500,Jacket,Cotton-Blend,71,Simple,Spring,86,2.5,6
+ORD_000006,1200,T-Shirt,Cotton,63,Medium,Summer,84,2.0,7
+ORD_000007,1800,Shirt,Polyester,59,Complex,Fall,87,3.5,10
+ORD_000008,900,Pants,Denim,63,Simple,Winter,83,2.0,4
+ORD_000009,3000,Dress,Silk,55,Medium,Spring,91,1.0,15
+ORD_000010,1100,Jacket,Cotton,71,Simple,Summer,85,2.5,5

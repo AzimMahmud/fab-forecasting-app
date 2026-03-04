@@ -1443,7 +1443,7 @@ class DashboardPage:
             ))
             fig.update_layout(height=350, hovermode='x unified',
                              yaxis_title=f'Consumption ({unit_pref})')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with col2:
             st.subheader("🎯 Model Performance (R²)")
@@ -1484,7 +1484,7 @@ class DashboardPage:
                 yaxis=dict(range=[0, 103]),
                 margin=dict(t=20),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     @staticmethod
     def _render_statistics(df: pd.DataFrame, unit_pref: str, show_dual_units: bool) -> None:
@@ -1500,7 +1500,7 @@ class DashboardPage:
                               labels={variance_col: f'Variance ({unit_pref})'},
                               color_discrete_sequence=['#3498db'])
             fig.add_vline(x=0, line_dash="dash", line_color="red")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with col2:
             st.subheader("🏭 Variance by Garment Type")
@@ -1510,7 +1510,7 @@ class DashboardPage:
                       orientation='h', marker_color='#e74c3c')
             ])
             fig.update_layout(xaxis_title=f'Avg Variance ({unit_pref})')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
 
 class SinglePredictionPage:
@@ -1854,7 +1854,7 @@ class SinglePredictionPage:
             legend=dict(orientation='h', y=-0.15),
             margin=dict(l=20, r=160, t=20, b=60),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # Detailed prediction breakdown — thesis-grade tabular summary
         with st.expander("📋 Full Prediction Breakdown", expanded=False):
@@ -2162,7 +2162,7 @@ class BatchPredictionPage:
             fig = px.histogram(df, x='Predicted', nbins=30,
                               title="Predicted Consumption Distribution",
                               labels={'Predicted': f'Consumption ({unit_pref})'})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with col2:
             st.subheader("💰 Savings Analysis")
@@ -2170,7 +2170,7 @@ class BatchPredictionPage:
                             size='Potential_Savings', color='Garment_Type',
                             title="Savings vs Order Size",
                             labels={'Potential_Savings': 'Savings ($)'})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         # Results table
         st.markdown("---")
@@ -2537,7 +2537,7 @@ class PerformancePage:
             polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
             height=440, legend=dict(orientation="h", y=-0.15),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     # ── Tab 2: Error Analysis ─────────────────────────────────────────────────
 
@@ -2555,7 +2555,7 @@ class PerformancePage:
             fig.update_layout(title=f"RMSE by Model ({unit_pref})",
                               yaxis_title=f"RMSE ({unit_pref})",
                               height=380, bargap=0.3)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with col2:
             fig = go.Figure([
@@ -2566,7 +2566,7 @@ class PerformancePage:
             fig.update_layout(title=f"MAE by Model ({unit_pref})",
                               yaxis_title=f"MAE ({unit_pref})",
                               height=380, bargap=0.3)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         st.markdown("---")
         st.subheader("📉 MAPE Comparison (lower is better)")
@@ -2583,7 +2583,7 @@ class PerformancePage:
         fig.add_hline(y=2.5, line_dash="dot", line_color="green",
                       annotation_text="Excellent (<2.5%)")
         fig.update_layout(height=420, yaxis_title="MAPE (%)", bargap=0.3)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         bom_row = df[df["Model"] == "Traditional BOM"]
         if not bom_row.empty:
@@ -2607,7 +2607,7 @@ class PerformancePage:
                 fig.update_layout(title="RMSE Reduction vs BOM (%)",
                                   height=360, bargap=0.3,
                                   yaxis_title="Improvement %")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             with col2:
                 fig = go.Figure([
                     go.Bar(x=[r["Model"]], y=[r["MAPE Imp %"]],
@@ -2619,7 +2619,7 @@ class PerformancePage:
                 fig.update_layout(title="MAPE Reduction vs BOM (%)",
                                   height=360, bargap=0.3,
                                   yaxis_title="Improvement %")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
     # ── Tab 3: Accuracy Deep-Dive ─────────────────────────────────────────────
 
@@ -2644,7 +2644,7 @@ class PerformancePage:
             fig.update_layout(title="R² Score by Model", height=420,
                               yaxis=dict(range=[0.65, 1.02]),
                               yaxis_title="R²", bargap=0.3)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with col2:
             bom_r2_vals = df[df["Model"] == "Traditional BOM"]["R2"].values
@@ -2664,7 +2664,7 @@ class PerformancePage:
             fig.update_layout(title="ML Models vs BOM Baseline",
                               xaxis=dict(range=[0.70, 1.01], title="R² Score"),
                               height=420)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         if cv_data:
             st.markdown("---")
@@ -2691,7 +2691,7 @@ class PerformancePage:
                 ])
                 fig.update_layout(title="CV R² (mean ± std)", height=360,
                                   showlegend=False, yaxis_title="R²")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             with col2:
                 fig = go.Figure([
                     go.Bar(x=[m], y=[d.get("mape_mean",0)],
@@ -2703,7 +2703,7 @@ class PerformancePage:
                 ])
                 fig.update_layout(title="CV MAPE % (mean ± std)", height=360,
                                   showlegend=False, yaxis_title="MAPE %")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
         else:
             st.info(
                 "💡 Cross-validation data not available. "
@@ -2776,7 +2776,7 @@ class PerformancePage:
                 height=400,
                 yaxis=dict(autorange="reversed"),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with col2:
             fig2 = go.Figure(go.Pie(
@@ -2787,7 +2787,7 @@ class PerformancePage:
             ))
             fig2.update_layout(title="Share", height=400,
                                legend=dict(font=dict(size=10)))
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
 
     # ── Tab 5: Ensemble Details ───────────────────────────────────────────────
 
@@ -2831,7 +2831,7 @@ class PerformancePage:
             ))
             fig.update_layout(title="Weight Allocation", height=400,
                               legend=dict(orientation="h", y=-0.15))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with col2:
             st.subheader("📈 Weight vs Performance")
@@ -2853,7 +2853,7 @@ class PerformancePage:
                 fig.update_layout(height=400, showlegend=False,
                                   xaxis_title="R² Score", yaxis_title="MAPE %",
                                   yaxis=dict(autorange="reversed"))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
         st.markdown("---")
         wt_rows = [{"Model": m, "Weight": f"{w:.4f}",
@@ -3038,7 +3038,7 @@ class ROICalculatorPage:
         fig.update_layout(height=500, hovermode='x unified',
                          xaxis_title="Month", yaxis_title="Amount ($)")
 
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     @staticmethod
     def _render_environmental_impact(

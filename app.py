@@ -5,7 +5,7 @@
 ================================================================================
 
 A production-ready Streamlit dashboard for intelligent fabric consumption
-prediction with dual unit support (Meters & Yards).
+prediction with yards measurement support.
 
 Version:        3.0.0
 Developer:      Azim Mahmud
@@ -121,9 +121,9 @@ class AppConfig:
     SESSION_TIMEOUT_MINUTES = int(os.getenv("FABRIC_APP_SESSION_TIMEOUT_MINUTES", "120"))
 
     # Business Constants
-    # Fabric cost per meter — must match FABRIC_COST_PER_M in data_generation_script.py.
+    # Fabric cost per yard — must match FABRIC_COST_PER_M in data_generation_script.py.
     # These per-fabric values are used for cost and savings calculations throughout the app.
-    FABRIC_COST_PER_METER = {
+    FABRIC_COST_PER_YARD = {
         "Cotton":       8.5,
         "Polyester":    6.2,
         "Cotton-Blend": 7.0,
@@ -131,7 +131,7 @@ class AppConfig:
         "Denim":        9.5,
     }
     # Fallback average cost used when fabric type is unknown (weighted mean across types)
-    DEFAULT_FABRIC_COST_PER_METER = 8.5  # Cotton baseline; see FABRIC_COST_PER_METER for full map
+    DEFAULT_FABRIC_COST_PER_YARD = 8.5  # Cotton baseline; see FABRIC_COST_PER_YARD for full map
     DEFAULT_BOM_BUFFER = 1.05  # 5% safety margin (industry standard)
     # Garment-specific base consumption (meters at 160 cm standard width).
     # Must match data_generation_script.py BASE_CONSUMPTION_M and
@@ -290,8 +290,7 @@ class ModelType(Enum):
 
 
 class UnitType(Enum):
-    """Supported unit types"""
-    METERS = "meters"
+    """Supported unit types (yards only)"""
     YARDS = "yards"
 
 
@@ -1192,8 +1191,8 @@ class SessionManager:
     def initialize() -> None:
         """Initialize all session state variables"""
         defaults = {
-            'unit_preference':    UnitType.METERS.value,
-            'show_dual_units':    True,
+            'unit_preference':    UnitType.YARDS.value,
+            'show_dual_units':    False,  # Disabled - yards only
             'predictions_count':  0,
             'total_savings':      0.0,
             'session_start':      datetime.now(),
@@ -1398,9 +1397,9 @@ class DashboardPage:
         total_waste_usd = (
             df_history['Variance_m'].clip(lower=0)
             * df_history['Garment_Type'].map(
-                {g: AppConfig.FABRIC_COST_PER_METER.get('Cotton',
-                 AppConfig.DEFAULT_FABRIC_COST_PER_METER) for g in AppConfig.GARMENT_TYPES}
-            ).fillna(AppConfig.DEFAULT_FABRIC_COST_PER_METER)
+                {g: AppConfig.FABRIC_COST_PER_YARD.get('Cotton',
+                 AppConfig.DEFAULT_FABRIC_COST_PER_YARD) for g in AppConfig.GARMENT_TYPES}
+            ).fillna(AppConfig.DEFAULT_FABRIC_COST_PER_YARD)
         ).sum()
         pct_over = (df_history['Variance_m'] > 0).mean() * 100
 
@@ -1809,8 +1808,8 @@ class SinglePredictionPage:
             )
 
         with col3:
-            fabric_cost = AppConfig.FABRIC_COST_PER_METER.get(
-                order_input.fabric_type, AppConfig.DEFAULT_FABRIC_COST_PER_METER
+            fabric_cost = AppConfig.FABRIC_COST_PER_YARD.get(
+                order_input.fabric_type, AppConfig.DEFAULT_FABRIC_COST_PER_YARD
             )
             if unit_pref == 'yards':
                 fabric_cost = fabric_cost * UnitConverter.METERS_TO_YARDS
@@ -2182,14 +2181,14 @@ class BatchPredictionPage:
                     df['Predicted'] = df['Predicted_yards']
                     df['Traditional_BOM'] = df['Traditional_BOM_yards']
                     df['fabric_cost'] = df['Fabric_Type'].map(
-                        AppConfig.FABRIC_COST_PER_METER
-                    ).fillna(AppConfig.DEFAULT_FABRIC_COST_PER_METER) * UnitConverter.METERS_TO_YARDS
+                        AppConfig.FABRIC_COST_PER_YARD
+                    ).fillna(AppConfig.DEFAULT_FABRIC_COST_PER_YARD) * UnitConverter.METERS_TO_YARDS
                 else:
                     df['Predicted'] = df['Predicted_m']
                     df['Traditional_BOM'] = df['Traditional_BOM_m']
                     df['fabric_cost'] = df['Fabric_Type'].map(
-                        AppConfig.FABRIC_COST_PER_METER
-                    ).fillna(AppConfig.DEFAULT_FABRIC_COST_PER_METER)
+                        AppConfig.FABRIC_COST_PER_YARD
+                    ).fillna(AppConfig.DEFAULT_FABRIC_COST_PER_YARD)
 
                 df['Difference'] = df['Predicted'] - df['Traditional_BOM']
                 df['Difference_%'] = (df['Difference'] / df['Traditional_BOM']) * 100
@@ -2221,7 +2220,7 @@ class BatchPredictionPage:
 
         # fabric_cost column already computed per-row in _generate_predictions;
         # use it directly — no need for a scalar fallback here.
-        fabric_cost = AppConfig.DEFAULT_FABRIC_COST_PER_METER  # kept for display only
+        fabric_cost = AppConfig.DEFAULT_FABRIC_COST_PER_YARD  # kept for display only
 
         with col1:
             st.metric("Total Orders", len(df))
@@ -2989,9 +2988,9 @@ class ROICalculatorPage:
             current_waste_rate = st.slider("Current Waste Rate (%)", 1.0, 20.0, 8.0, 0.5)
 
             default_cost = (
-                AppConfig.DEFAULT_FABRIC_COST_PER_METER
+                AppConfig.DEFAULT_FABRIC_COST_PER_YARD
                 if unit_pref == 'meters' else
-                AppConfig.DEFAULT_FABRIC_COST_PER_METER * UnitConverter.METERS_TO_YARDS
+                AppConfig.DEFAULT_FABRIC_COST_PER_YARD * UnitConverter.METERS_TO_YARDS
             )
             fabric_cost = st.number_input(
                 f"Fabric Cost ($/{unit_pref})",
@@ -3400,23 +3399,14 @@ class SidebarRenderer:
         """Render unit preference settings"""
         st.sidebar.markdown("### ⚙️ Unit Settings")
 
-        unit_pref = st.sidebar.radio(
-            "Preferred Unit",
-            options=[UnitType.METERS.value, UnitType.YARDS.value],
-            index=0 if st.session_state.unit_preference == UnitType.METERS.value else 1,
-            help="Select your preferred measurement unit"
-        )
+        # Yards-only - no unit selector needed
+        unit_pref = UnitType.YARDS.value
         st.session_state.unit_preference = unit_pref
-        st.session_state.show_dual_units = st.sidebar.checkbox(
-            "Show both units",
-            value=True,
-            help="Display values in both meters and yards"
-        )
 
         st.sidebar.markdown(f"""
-        <div style='background-color: #ff6b6b; color: white; padding: 0.5rem;
+        <div style='background-color: #4CAF50; color: white; padding: 0.5rem;
              border-radius: 0.3rem; text-align: center; margin: 0.5rem 0;'>
-            <strong>Active Unit: {unit_pref.upper()}</strong>
+            <strong>Measurement Unit: YARDS</strong>
         </div>
         """, unsafe_allow_html=True)
 

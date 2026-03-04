@@ -56,6 +56,28 @@ except ImportError:
 
 
 # ============================================================================
+# UTF-8 ENCODING FIX FOR WINDOWS
+# ============================================================================
+
+# Reconfigure stdout to use UTF-8 encoding for emoji/Unicode support on Windows
+# This fixes UnicodeEncodeError when printing special characters
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(
+        sys.stdout.buffer,
+        encoding='utf-8',
+        errors='replace',
+        line_buffering=True
+    )
+    sys.stderr = io.TextIOWrapper(
+        sys.stderr.buffer,
+        encoding='utf-8',
+        errors='replace',
+        line_buffering=True
+    )
+
+
+# ============================================================================
 # CONFIGURATION
 # ============================================================================
 
@@ -64,7 +86,8 @@ class TrainingConfig:
 
     # ── Data ────────────────────────────────────────────────────────────────
     DATA_PATH     = Path("generated_data")
-    TRAINING_DATA = "training_dataset_1000_orders_meters.csv"
+    # Using 5000-row production dataset for training (improved model accuracy)
+    TRAINING_DATA = "production_dataset_5000_orders_meters.csv"
 
     # ── Model output ────────────────────────────────────────────────────────
     MODEL_PATH   = Path("models")
@@ -724,6 +747,7 @@ def main() -> bool:
     logger.info("=" * 80)
     logger.info("FABRIC CONSUMPTION FORECASTING SYSTEM — MODEL TRAINING v3.0")
     logger.info("=" * 80)
+    logger.info(f"Training dataset     : {TrainingConfig.TRAINING_DATA}")
     logger.info(f"TensorFlow available : {TENSORFLOW_AVAILABLE}")
     logger.info(f"Models to train      : Linear Regression, Random Forest, XGBoost, LSTM, Ensemble")
     logger.info(f"Features             : 9 (including Season)")

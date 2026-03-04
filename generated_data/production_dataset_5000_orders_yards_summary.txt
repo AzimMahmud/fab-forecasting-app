@@ -1,0 +1,58 @@
+
+Dataset Overview
+============================================================
+Total orders  : 5,000
+Date range    : 2022-01-01 -> 2024-09-26
+Primary unit  : yards
+
+Consumption (Meters)
+============================================================
+  Avg Planned BOM       :    7776.83 m
+  Avg Actual            :    7784.73 m
+  Avg |Variance|        :     211.40 m
+  Avg Variance %        :      +0.91%
+  Std Variance %        :       3.62%
+  Avg |Variance %|      :       2.94%
+  Avg |Variance %|      :       2.94%  (|diff|/Planned)
+  MAPE vs Actual        :       2.89%  (|diff|/Actual, true MAPE)
+
+Consumption (Yards)
+============================================================
+  Avg Planned BOM       :    8504.85 yd
+  Avg Actual            :    8513.49 yd
+  Avg |Variance|        :     231.19 yd
+
+Economic Impact
+============================================================
+  Total planned cost    : $434,763,243.17
+  Total actual cost     : $435,034,068.68
+  Total waste cost      : $6,038,852.21
+  Avg waste / order     : $     1207.77
+
+Variance Distribution
+============================================================
+  Over-consumption      : 58.0%
+  Under-consumption     : 42.0%
+
+Feature-Target Correlations (Actual_Consumption_m)
+============================================================
+  r( Order_Quantity                           ) = +0.778
+  r( Marker_Efficiency_%                      ) = -0.025
+  r( Expected_Defect_Rate_%                   ) = +0.010
+  r( Operator_Experience_Years                ) = -0.011
+  r( Fabric_Width_cm                          ) = -0.146
+
+Season Distribution
+============================================================
+  Fall    : 1268 orders (25.4%)
+  Summer  : 1268 orders (25.4%)
+  Spring  : 1238 orders (24.8%)
+  Winter  : 1226 orders (24.5%)
+
+Expected ML Performance (1000+ rows, single 2% noise)
+============================================================
+  Noise std (irreducible) : 3.62%
+  Theoretical MAPE floor  : 2.89%  (sigma * sqrt(2/pi))
+  Expected XGBoost MAPE   : 3.62 - 5.42%
+  Expected Ensemble MAPE  : 2.89 - 4.34%
+  Expected Ensemble R2    : > 0.97  (>= 1000 rows)

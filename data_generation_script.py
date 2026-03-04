@@ -151,7 +151,7 @@ class FabricDataGenerator:
     # Public API
     # ------------------------------------------------------------------
 
-    def generate_dataset(self, n_samples=1000, start_date="2023-01-01",
+    def generate_dataset(self, n_samples=5000, start_date="2023-01-01",
                          unit="meters", include_both_units=True,
                          noise_std=0.020):
         """
@@ -505,14 +505,21 @@ def main():
     export_csv(df3, f"{out}/training_dataset_1000_orders_meters.csv")
     export_summary(df3, f"{out}/training_dataset_1000_orders_meters_summary.txt")
 
-    # ── Dataset 4: 5 000-row production set ─────────────────────────────────
+    # ── Dataset 4: 5 000-row production set (meters) ───────────────────────────
     print("\n" + "-" * 70)
     print("DATASET 4 — Production  5 000 orders  (meters)")
     df4 = gen.generate_dataset(5000, "2022-01-01", "meters")
     export_csv(df4, f"{out}/production_dataset_5000_orders_meters.csv")
     export_summary(df4, f"{out}/production_dataset_5000_orders_meters_summary.txt")
 
-    # ── Dataset 5: Batch upload template ────────────────────────────────────
+    # ── Dataset 5: 5 000-row production set (yards) ────────────────────────────
+    print("\n" + "-" * 70)
+    print("DATASET 5 — Production  5 000 orders  (yards)")
+    df5 = gen.generate_dataset(5000, "2022-01-01", "yards")
+    export_csv(df5, f"{out}/production_dataset_5000_orders_yards.csv")
+    export_summary(df5, f"{out}/production_dataset_5000_orders_yards_summary.txt")
+
+    # ── Dataset 6: Batch upload template ──────────────────────────────────────
     print("\n" + "-" * 70)
     print("DATASET 5 — Batch Prediction Template")
     create_batch_template(f"{out}/batch_prediction_template.csv", n_samples=10)
@@ -525,7 +532,10 @@ Files written to generated_data/:
 
   Training (use with train_models.py):
     training_dataset_1000_orders_meters.csv    (1 000 rows) <- PRIMARY
+
+  Production:
     production_dataset_5000_orders_meters.csv  (5 000 rows)
+    production_dataset_5000_orders_yards.csv   (5 000 rows)
 
   Demo:
     demo_dataset_100_orders_meters.csv  (100 rows)

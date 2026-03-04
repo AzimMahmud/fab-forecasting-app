@@ -44,6 +44,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
+import subprocess
 
 try:
     import joblib
@@ -3467,6 +3468,93 @@ class SidebarRenderer:
 
 
 # ============================================================================
+# MODEL TRAINING CHECK
+# ============================================================================
+
+def check_and_train_models_if_needed():
+    """
+    Check if models folder is empty or missing required model files.
+    If so, automatically run train_models.py to train the models.
+
+    Returns:
+        bool: True if models are ready, False otherwise
+    """
+    model_path = AppConfig.MODEL_PATH
+
+    # Create models directory if it doesn't exist
+    if not model_path.exists():
+        model_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Created models directory: {model_path}")
+
+    # Check for essential model files
+    required_files = [
+        "xgboost_model.pkl",
+        "scaler.pkl",
+        "label_encoders.pkl",
+        "model_metadata.json"
+    ]
+
+    missing_files = []
+    for file in required_files:
+        file_path = model_path / file
+        if not file_path.exists():
+            missing_files.append(file)
+
+    # If all required files exist, models are ready
+    if not missing_files:
+        logger.info("✅ All required model files found")
+        return True
+
+    # Models are missing - need to train
+    logger.warning("⚠️  Model files missing or models folder is empty")
+    logger.warning(f"Missing files: {missing_files}")
+    logger.info("🔄 Starting automatic model training...")
+
+    # Check if training data exists
+    training_data = Path("generated_data/production_dataset_5000_orders_meters.csv")
+    if not training_data.exists():
+        logger.error(f"❌ Training data not found: {training_data}")
+        logger.error("Please run 'python data_generation_script.py' first to generate the training data.")
+        return False
+
+    # Run train_models.py
+    try:
+        logger.info("Running train_models.py - this may take a few minutes...")
+        result = subprocess.run(
+            [sys.executable, "train_models.py"],
+            capture_output=True,
+            text=True,
+            timeout=600  # 10 minutes timeout
+        )
+
+        if result.returncode == 0:
+            logger.info("✅ Model training completed successfully!")
+
+            # Verify models were created
+            still_missing = []
+            for file in required_files:
+                if not (model_path / file).exists():
+                    still_missing.append(file)
+
+            if still_missing:
+                logger.error(f"❌ Training completed but files still missing: {still_missing}")
+                return False
+
+            return True
+        else:
+            logger.error(f"❌ Model training failed with return code: {result.returncode}")
+            logger.error(f"Error output:\n{result.stderr}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        logger.error("❌ Model training timed out after 10 minutes")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Error running train_models.py: {e}")
+        return False
+
+
+# ============================================================================
 # MAIN APPLICATION
 # ============================================================================
 
@@ -3505,6 +3593,13 @@ Release: January 2026"""
         if not SessionManager.is_session_valid():
             st.warning("Session expired. Please refresh the page.")
             SessionManager.initialize()
+
+        # Check and train models if needed (auto-train on first run)
+        if not check_and_train_models_if_needed():
+            st.error("❌ Failed to initialize models. Please check the logs for details.")
+            st.error("Ensure 'generated_data/production_dataset_5000_orders_meters.csv' exists.")
+            st.error("Run 'python data_generation_script.py' first if the data file is missing.")
+            st.stop()
 
         # Load models
         models, production_mode = model_manager.load_models()

@@ -1,32 +1,58 @@
 
 Dataset Overview
-==================================================
-Total Orders: 1000
-Date Range: 2023-01-01 00:00:00 to 2023-07-19 00:00:00
-Primary Unit: meters
+============================================================
+Total orders  : 1,000
+Date range    : 2023-01-01 -> 2023-07-19
+Primary unit  : meters
 
-Consumption Statistics (Meters)
-==================================================
-Avg Planned BOM: 8023.38
-Avg Actual Consumption: 7981.66
-Avg Variance: -41.72
-Avg Variance %: 0.79%
+Consumption (Meters)
+============================================================
+  Avg Planned BOM       :    7526.07 m
+  Avg Actual            :    7526.35 m
+  Avg |Variance|        :     211.59 m
+  Avg Variance %        :      +0.75%
+  Std Variance %        :       3.66%
+  Avg |Variance %|      :       2.93%
+  Avg |Variance %|      :       2.93%  (|diff|/Planned)
+  MAPE vs Actual        :       2.89%  (|diff|/Actual, true MAPE)
 
-Consumption Statistics (Yards)
-==================================================
-Avg Planned BOM: 8774.48
-Avg Actual Consumption: 8728.85
-Avg Variance: -45.63
+Consumption (Yards)
+============================================================
+  Avg Planned BOM       :    8230.61 yd
+  Avg Actual            :    8230.91 yd
+  Avg |Variance|        :     231.40 yd
 
 Economic Impact
-==================================================
-Total Planned Cost: $88,833,556.43
-Total Actual Cost: $88,550,347.07
-Total Waste Cost: $2,093,422.78
-Avg Waste Per Order: $2093.42
+============================================================
+  Total planned cost    : $82,235,045.11
+  Total actual cost     : $82,291,806.32
+  Total waste cost      : $1,170,041.46
+  Avg waste / order     : $     1170.04
 
-Distribution
-==================================================
-Over-consumption %: 52.4%
-Under-consumption %: 47.6%
-Perfect match %: 0.0%
+Variance Distribution
+============================================================
+  Over-consumption      : 55.8%
+  Under-consumption     : 44.2%
+
+Feature-Target Correlations (Actual_Consumption_m)
+============================================================
+  r( Order_Quantity                           ) = +0.784
+  r( Marker_Efficiency_%                      ) = -0.048
+  r( Expected_Defect_Rate_%                   ) = -0.006
+  r( Operator_Experience_Years                ) = -0.021
+  r( Fabric_Width_cm                          ) = -0.141
+
+Season Distribution
+============================================================
+  Summer  : 264 orders (26.4%)
+  Spring  : 247 orders (24.7%)
+  Winter  : 245 orders (24.5%)
+  Fall    : 244 orders (24.4%)
+
+Expected ML Performance (1000+ rows, single 2% noise)
+============================================================
+  Noise std (irreducible) : 3.66%
+  Theoretical MAPE floor  : 2.92%  (sigma * sqrt(2/pi))
+  Expected XGBoost MAPE   : 3.66 - 5.49%
+  Expected Ensemble MAPE  : 2.92 - 4.39%
+  Expected Ensemble R2    : > 0.97  (>= 1000 rows)

@@ -7,7 +7,7 @@
 A production-ready Streamlit dashboard for intelligent fabric consumption
 prediction with dual unit support (Meters & Yards).
 
-Version:        1.0.0
+Version:        3.0.0
 Developer:      Azim Mahmud
 Release Date:   January 2026
 License:        Proprietary - All Rights Reserved
@@ -66,11 +66,10 @@ except ImportError:
 
 class AppConfig:
     """
-    Application Configuration Management (UPDATED)
+    Application Configuration Management
 
     Centralized configuration with environment variable support.
     All sensitive values should be set via environment variables in production.
-    Now includes LSTM support and enhanced model metadata handling.
 
     Environment Variables:
         FABRIC_APP_ENV: Environment (development, staging, production)
@@ -81,12 +80,12 @@ class AppConfig:
         FABRIC_APP_SESSION_TIMEOUT_MINUTES: Session timeout duration
         FABRIC_APP_ENABLE_LSTM: Enable LSTM model (requires TensorFlow)
 
-    Developer: Azim Mahmud | Version 2.0.0
+    Developer: Azim Mahmud | Version 3.0.0
     """
 
     # Application Metadata
     APP_NAME = "Fabric Forecast Pro"
-    APP_VERSION = "2.0.0"  # UPDATED
+    APP_VERSION = "3.0.0"
     APP_AUTHOR = "Azim Mahmud"
 
     # Environment Configuration
@@ -95,23 +94,24 @@ class AppConfig:
     DEBUG = ENV == "development"
 
     # File Upload Limits
+    # WARNING: must match [client] and [server] maxUploadSize in config.toml.
     MAX_FILE_SIZE_MB = int(os.getenv("FABRIC_APP_MAX_FILE_SIZE_MB", "10"))
     MAX_BATCH_ROWS = int(os.getenv("FABRIC_APP_MAX_BATCH_ROWS", "1000"))
 
-    # Model Configuration (UPDATED)
+    # Model Configuration
     MODEL_PATH = Path(os.getenv("FABRIC_APP_MODEL_PATH", "models"))
     MODEL_FILES = {
-        "xgboost": "xgboost_model.pkl",
-        "random_forest": "random_forest_model.pkl",
+        "xgboost":           "xgboost_model.pkl",
+        "random_forest":     "random_forest_model.pkl",
         "linear_regression": "linear_regression_model.pkl",
-        "lstm": "lstm_model.h5",  # NEW: LSTM model file
-        "ensemble": "ensemble_model.pkl",  # Weighted-average ensemble spec
-        "scaler": "scaler.pkl",
-        "encoders": "label_encoders.pkl",
-        "metadata": "model_metadata.json"
+        "ensemble":          "ensemble_model.pkl",   # weighted-average ensemble
+        "lstm":              "lstm_model.h5",
+        "scaler":            "scaler.pkl",
+        "encoders":          "label_encoders.pkl",
+        "metadata":          "model_metadata.json",
     }
 
-    # LSTM Configuration (NEW)
+    # LSTM Configuration
     ENABLE_LSTM = os.getenv("FABRIC_APP_ENABLE_LSTM", "true").lower() == "true"
     LSTM_AVAILABLE = False  # Set dynamically based on TensorFlow availability
 
@@ -120,19 +120,40 @@ class AppConfig:
     SESSION_TIMEOUT_MINUTES = int(os.getenv("FABRIC_APP_SESSION_TIMEOUT_MINUTES", "120"))
 
     # Business Constants
-    DEFAULT_FABRIC_COST_PER_METER = 8.5
-    DEFAULT_GARMENT_CONSUMPTION_BASE = 1.5  # meters per garment
-    DEFAULT_BOM_BUFFER = 1.05  # 5% buffer
+    # Fabric cost per meter — must match FABRIC_COST_PER_M in data_generation_script.py.
+    # These per-fabric values are used for cost and savings calculations throughout the app.
+    FABRIC_COST_PER_METER = {
+        "Cotton":       8.5,
+        "Polyester":    6.2,
+        "Cotton-Blend": 7.0,
+        "Silk":        25.0,
+        "Denim":        9.5,
+    }
+    # Fallback average cost used when fabric type is unknown (weighted mean across types)
+    DEFAULT_FABRIC_COST_PER_METER = 8.5  # Cotton baseline; see FABRIC_COST_PER_METER for full map
+    DEFAULT_BOM_BUFFER = 1.05  # 5% safety margin (industry standard)
+    # Garment-specific base consumption (meters at 160 cm standard width).
+    # Must match data_generation_script.py BASE_CONSUMPTION_M and
+    # train_models.py TrainingConfig.GARMENT_BASE_M exactly.
+    GARMENT_BASE_CONSUMPTION_M = {
+        "T-Shirt": 1.20,
+        "Shirt":   1.80,
+        "Pants":   2.50,
+        "Dress":   3.00,
+        "Jacket":  3.50,
+    }
 
     # Validation Constants
-    ORDER_QUANTITY_MIN = 1
-    ORDER_QUANTITY_MAX = 100000
-    MARKER_EFFICIENCY_MIN = 50.0
-    MARKER_EFFICIENCY_MAX = 99.0
+    # Input ranges aligned with training data domain.
+    # Values outside these bounds are extrapolation — warnings are shown.
+    ORDER_QUANTITY_MIN = 100         # training: 100–5 000
+    ORDER_QUANTITY_MAX = 5000        # clamp to training domain
+    MARKER_EFFICIENCY_MIN = 70.0     # training: 70–95%
+    MARKER_EFFICIENCY_MAX = 95.0
     DEFECT_RATE_MIN = 0.0
-    DEFECT_RATE_MAX = 20.0
-    OPERATOR_EXPERIENCE_MIN = 0
-    OPERATOR_EXPERIENCE_MAX = 50
+    DEFECT_RATE_MAX = 10.0           # training: 0–10%
+    OPERATOR_EXPERIENCE_MIN = 1      # training: 1–20 yrs (0 is extrapolation)
+    OPERATOR_EXPERIENCE_MAX = 20
 
     # Supported Values (ALIGNED WITH TRAINING MODULE)
     GARMENT_TYPES = ["T-Shirt", "Shirt", "Pants", "Dress", "Jacket"]
@@ -142,17 +163,18 @@ class AppConfig:
     PATTERN_COMPLEXITIES = ["Simple", "Medium", "Complex"]
     SEASONS = ["Spring", "Summer", "Fall", "Winter"]
 
-    # Column Mapping (NEW - from training module)
+    # Column Mapping — mirrors TrainingConfig.COLUMN_MAPPING in train_models.py
     COLUMN_MAPPING = {
-        "Order_Quantity": "order_quantity",
-        "Fabric_Width_cm": "fabric_width_cm",
-        "Marker_Efficiency_%": "marker_efficiency",
-        "Expected_Defect_Rate_%": "defect_rate",
+        "Order_Quantity":            "order_quantity",
+        "Fabric_Width_cm":           "fabric_width_cm",
+        "Marker_Efficiency_%":       "marker_efficiency",
+        "Expected_Defect_Rate_%":    "defect_rate",
         "Operator_Experience_Years": "operator_experience",
-        "Garment_Type": "garment_type",
-        "Fabric_Type": "fabric_type",
-        "Pattern_Complexity": "pattern_complexity",
-        "Actual_Consumption_m": "fabric_consumption_meters"
+        "Garment_Type":              "garment_type",
+        "Fabric_Type":               "fabric_type",
+        "Pattern_Complexity":        "pattern_complexity",
+        "Season":                    "season",
+        "Actual_Consumption_m":      "fabric_consumption_meters",
     }
 
     @classmethod
@@ -188,7 +210,7 @@ def configure_logging() -> logging.Logger:
     Returns:
         logging.Logger: Configured logger instance
 
-    Developer: Azim Mahmud | Version 1.0.0
+    Developer: Azim Mahmud | Version 3.0.0
     """
     logger = logging.getLogger(AppConfig.APP_NAME.replace(" ", "_"))
     logger.setLevel(AppConfig.get_log_level())
@@ -254,8 +276,8 @@ class ModelType(Enum):
     XGBOOST = "xgboost"
     RANDOM_FOREST = "random_forest"
     LINEAR_REGRESSION = "linear_regression"
-    LSTM = "lstm"  # NEW
-    ENSEMBLE = "ensemble"  # Weighted average of all base models
+    LSTM = "lstm"
+    ENSEMBLE = "ensemble"
 
 
 class UnitType(Enum):
@@ -285,7 +307,7 @@ class PredictionResult:
         model_name: Name of model used
         timestamp: Prediction timestamp
 
-    Developer: Azim Mahmud | Version 1.0.0
+    Developer: Azim Mahmud | Version 3.0.0
     """
     prediction: float
     prediction_alternate: float
@@ -319,8 +341,9 @@ class OrderInput:
         marker_efficiency: Marker efficiency percentage
         defect_rate: Expected defect rate percentage
         operator_experience: Operator experience in years
+        season: Production season (Spring/Summer/Fall/Winter)
 
-    Developer: Azim Mahmud | Version 1.0.0
+    Developer: Azim Mahmud | Version 3.0.0
     """
     order_id: str
     order_quantity: int
@@ -331,6 +354,7 @@ class OrderInput:
     marker_efficiency: float
     defect_rate: float
     operator_experience: int
+    season: str = "Spring"  # Season is a training feature (alphabetical encoding)
 
     def validate(self) -> None:
         """Validate order input data"""
@@ -375,6 +399,9 @@ class OrderInput:
                 f"and {AppConfig.OPERATOR_EXPERIENCE_MAX} years"
             )
 
+        if self.season not in AppConfig.SEASONS:
+            errors.append(f"Season must be one of {AppConfig.SEASONS}")
+
         if errors:
             raise ValidationError("; ".join(errors))
 
@@ -408,7 +435,7 @@ class UnitConverter:
         YARDS_TO_METERS (float): Exact conversion factor (0.9144)
         METERS_TO_YARDS (float): Inverse conversion factor
 
-    Developer: Azim Mahmud | Version 1.0.0
+    Developer: Azim Mahmud | Version 3.0.0
     """
 
     YARDS_TO_METERS = 0.9144
@@ -464,7 +491,7 @@ class InputValidator:
 
     Provides methods to validate user inputs and sanitize data.
 
-    Developer: Azim Mahmud | Version 1.0.0
+    Developer: Azim Mahmud | Version 3.0.0
     """
 
     @staticmethod
@@ -525,7 +552,7 @@ class ModelManager:
         models: Dictionary of loaded models
         mode: Current processing mode (production/demo)
 
-    Developer: Azim Mahmud | Version 1.0.0
+    Developer: Azim Mahmud | Version 3.0.0
     """
 
     def __init__(self):
@@ -548,13 +575,14 @@ class ModelManager:
     def load_models(self) -> Tuple[Dict[str, Any], bool]:
         """
         Load trained machine learning models from persistent storage.
-        Now includes LSTM model loading support.
+        Supports all model types: XGBoost, Random Forest, Linear Regression,
+        LSTM (TensorFlow), and the weighted-average Ensemble.
 
         Returns:
             tuple: (models_dict, is_production_mode)
 
         Raises:
-            ModelLoadError: If model loading fails in production
+            ModelLoadError: If a critical model file is missing in production
         """
         if self._load_attempted:
             return self.models, self.mode == ProcessingMode.PRODUCTION
@@ -638,7 +666,7 @@ class ModelManager:
                 logger.info(f"Loaded metadata from {metadata_path}")
             else:
                 loaded_models['metadata'] = {
-                    'version': '2.0.0',
+                    'version': '3.0.0',
                     'unit': 'meters',
                     'training_date': datetime.now().isoformat(),
                     'tensorflow_available': AppConfig.LSTM_AVAILABLE
@@ -665,21 +693,60 @@ class ModelManager:
                 return self.models, False
 
     def _create_demo_models(self) -> None:
-        """Create mock models for demo mode (UPDATED)"""
+        """Create statistically calibrated mock models for demo mode."""
         logger.info("Creating demo mode mock models")
 
         class MockModel:
-            """Mock model for demo purposes"""
+            """
+            Demo-mode mock model.
+            Predicts using the same deterministic physics as data_generation_script.py
+            so demo predictions are physically meaningful (no flat 2 m/unit average).
+            """
+            # Garment base consumption per unit at 160 cm width (alphabetical encoding)
+            # Dress=0, Jacket=1, Pants=2, Shirt=3, T-Shirt=4
+            _BASE_M = [3.00, 3.50, 2.50, 1.80, 1.20]
+            _COMPLEXITY_MULT = [1.35, 1.15, 1.00]   # Complex=0, Medium=1, Simple=2
+
             def __init__(self, name: str):
                 self.name = name
 
             def predict(self, X: np.ndarray) -> np.ndarray:
-                # Base prediction on order quantity with variance
+                """
+                Deterministic demo prediction.
+
+                Feature vector layout (must match TrainingConfig.FEATURES):
+                  0: order_quantity
+                  1: fabric_width_cm
+                  2: marker_efficiency
+                  3: defect_rate
+                  4: operator_experience
+                  5: garment_type_encoded   (0–4)
+                  6: fabric_type_encoded    (unused in BOM formula)
+                  7: pattern_complexity_encoded (0–2)
+                  8: season_encoded         (unused in BOM formula)
+                """
                 if len(X.shape) == 1:
                     X = X.reshape(1, -1)
-                base = X[:, 0] * AppConfig.DEFAULT_GARMENT_CONSUMPTION_BASE
-                variance = np.random.normal(0, 0.05, len(X))
-                return base * (1 + variance)
+
+                qty       = X[:, 0]
+                width_cm  = X[:, 1]
+                eff       = X[:, 2]
+                defect    = X[:, 3]
+                exp_yrs   = X[:, 4]
+                g_enc     = X[:, 5].astype(int).clip(0, 4)
+                c_enc     = X[:, 7].astype(int).clip(0, 2)
+
+                base = np.array([self._BASE_M[g] for g in g_enc])
+                base *= (160.0 / np.where(width_cm > 0, width_cm, 160.0))
+                base *= np.array([self._COMPLEXITY_MULT[c] for c in c_enc])
+
+                planned_bom = qty * base * 1.05
+                eff_factor  = 1.0 - (eff - 85.0) / 100.0 * 0.40
+                def_factor  = 1.0 + defect / 100.0
+                exp_factor  = 1.0 + np.exp(-exp_yrs / 15.0) * 0.04
+                noise       = np.random.default_rng(int(qty.sum()) % 2**32).normal(0, 0.015, len(qty))
+
+                return planned_bom * eff_factor * def_factor * exp_factor * (1.0 + noise)
 
         class MockLSTMModel(MockModel):
             """Mock LSTM model with different prediction shape"""
@@ -687,39 +754,15 @@ class ModelManager:
                 result = super().predict(X)
                 return result.reshape(-1, 1)  # LSTM returns 2D array
 
-        class MockEnsembleModel(MockModel):
-            """Mock ensemble — R²-weighted average of base model outputs, matching production."""
-            def predict(self, X: np.ndarray) -> np.ndarray:
-                if len(X.shape) == 1:
-                    X = X.reshape(1, -1)
-                base = X[:, 0] * AppConfig.DEFAULT_GARMENT_CONSUMPTION_BASE
-                # R²-proportional weights matching PerformancePage values
-                r2 = {'xgboost': 0.982, 'random_forest': 0.975, 'lstm': 0.970, 'linear_regression': 0.851}
-                total = sum(r2.values())
-                weights = {k: v / total for k, v in r2.items()}
-                noise_map = {'xgboost': 0.021, 'random_forest': 0.024,
-                             'lstm': 0.026, 'linear_regression': 0.058}
-                result = np.zeros(len(X))
-                for model_id, weight in weights.items():
-                    variance = np.random.normal(0, noise_map.get(model_id, 0.03), len(X))
-                    result += weight * (base * (1 + variance))
-                return result
-
-        # Build ensemble spec dynamically based on LSTM availability
-        base_model_names = ['xgboost', 'random_forest', 'linear_regression']
-        if AppConfig.LSTM_AVAILABLE:
-            base_model_names.append('lstm')
-
-        # Weights proportional to typical validation R² (normalised)
-        raw_weights = {
-            'xgboost': 0.982,
-            'random_forest': 0.975,
-            'linear_regression': 0.851,
-            'lstm': 0.970,
+        # Demo metadata mirrors production metadata structure so CI lookups work
+        _demo_weights = {
+            'xgboost': 0.40, 'random_forest': 0.30, 'linear_regression': 0.15
         }
-        filtered = {k: raw_weights[k] for k in base_model_names}
-        total_w = sum(filtered.values())
-        ensemble_weights = {k: round(v / total_w, 4) for k, v in filtered.items()}
+        if AppConfig.LSTM_AVAILABLE:
+            _demo_weights['lstm'] = 0.25
+            # Renormalise to sum=1
+            _total = sum(_demo_weights.values())
+            _demo_weights = {k: round(v / _total, 3) for k, v in _demo_weights.items()}
 
         self.models = {
             'xgboost': MockModel('XGBoost'),
@@ -727,24 +770,39 @@ class ModelManager:
             'linear_regression': MockModel('Linear Regression'),
             'lstm': MockLSTMModel('LSTM') if AppConfig.LSTM_AVAILABLE else None,
             'ensemble': {
-                'weights': ensemble_weights,
-                'model_names': base_model_names,
-                'weighted_by': 'validation_r2',
-                '_mock': True  # Flag so predict() handles demo mode correctly
+                'model_names': ['xgboost', 'random_forest', 'linear_regression'],
+                'weights':     {'xgboost': 0.43, 'random_forest': 0.30,
+                                'linear_regression': 0.27},
             },
             'metadata': {
-                'version': '2.0.0',
+                'version': '3.0.0',
                 'unit': 'meters',
                 'training_date': '2026-01-29',
                 'mode': 'demo',
-                'tensorflow_available': AppConfig.LSTM_AVAILABLE
+                'tensorflow_available': AppConfig.LSTM_AVAILABLE,
+                'models': {
+                    # rmse/mae in metres (illustrative). Used by _load_metrics & predict() CI.
+                    'ensemble':          {'rmse': 28.4, 'mae': 20.1, 'r2': 0.987, 'mape': 1.9,
+                                          'ci_bounds': {'ci_fraction': 0.019},
+                                          'weights': {'xgboost': 0.43, 'random_forest': 0.30,
+                                                      'lstm': 0.17, 'linear_regression': 0.10}},
+                    'xgboost':           {'rmse': 35.1, 'mae': 25.3, 'r2': 0.982, 'mape': 2.3,
+                                          'ci_bounds': {'ci_fraction': 0.023}},
+                    'random_forest':     {'rmse': 38.6, 'mae': 27.8, 'r2': 0.975, 'mape': 2.7,
+                                          'ci_bounds': {'ci_fraction': 0.027}},
+                    'lstm':              {'rmse': 42.2, 'mae': 30.4, 'r2': 0.970, 'mape': 3.1,
+                                          'ci_bounds': {'ci_fraction': 0.031}},
+                    'linear_regression': {'rmse': 88.7, 'mae': 65.1, 'r2': 0.851, 'mape': 6.2,
+                                          'ci_bounds': {'ci_fraction': 0.062}},
+                },
+                'bom_baseline': {'rmse': 120.5, 'mae': 90.2, 'r2': 0.753, 'mape': 8.5}
             }
         }
         self.mode = ProcessingMode.DEMO
         self.lstm_available = AppConfig.LSTM_AVAILABLE
 
     def get_model(self, model_name: str) -> Any:
-        """Get a specific model by name (UPDATED)"""
+        """Retrieve a loaded model by name, with LSTM availability guard."""
         if model_name not in self.models:
             raise PredictionError(f"Model '{model_name}' not available")
         
@@ -753,66 +811,8 @@ class ModelManager:
         # Check if LSTM is requested but not available
         if model_name == "lstm" and model is None:
             raise PredictionError("LSTM model not available (TensorFlow required)")
-
-        # Ensemble requires at least the base models to be loaded
-        if model_name == "ensemble" and not isinstance(model, dict):
-            raise PredictionError("Ensemble specification not loaded correctly")
             
         return model
-
-    def _predict_ensemble(
-        self,
-        features: np.ndarray,
-        ensemble_spec: dict
-    ) -> float:
-        """
-        Compute a weighted-average ensemble prediction.
-
-        Iterates over each base model named in the spec, calls its predict()
-        (with LSTM-specific reshaping when needed), then returns the
-        dot-product of predictions and weights.
-
-        Args:
-            features: Scaled feature array, shape (1, n_features)
-            ensemble_spec: Dict with 'weights' and 'model_names'
-
-        Returns:
-            float: Weighted-average prediction
-        """
-        weights = ensemble_spec["weights"]
-        model_names = ensemble_spec["model_names"]
-
-        weighted_sum = 0.0
-        weight_total = 0.0
-
-        for name in model_names:
-            base_model = self.models.get(name)
-            if base_model is None:
-                logger.warning(f"Ensemble: skipping unavailable model '{name}'")
-                continue
-
-            try:
-                if name == "lstm":
-                    features_3d = features.reshape(
-                        features.shape[0], 1, features.shape[1]
-                    )
-                    pred = float(base_model.predict(features_3d, verbose=0).flatten()[0])
-                else:
-                    pred = float(base_model.predict(features)[0])
-
-                w = weights.get(name, 0.0)
-                weighted_sum += w * pred
-                weight_total += w
-                logger.debug(f"Ensemble: {name} pred={pred:.3f} weight={w:.3f}")
-
-            except Exception as exc:
-                logger.warning(f"Ensemble: error predicting with {name}: {exc}")
-
-        if weight_total == 0:
-            raise PredictionError("All ensemble base models failed to predict")
-
-        # Re-normalise in case some models were skipped
-        return weighted_sum / weight_total
 
     def predict(
         self,
@@ -821,24 +821,30 @@ class ModelManager:
         output_unit: str = 'meters'
     ) -> PredictionResult:
         """
-        Calculate fabric consumption prediction using ML models (UPDATED).
-        Now supports LSTM predictions with proper reshaping.
+        Run fabric consumption prediction through the requested ML model.
+
+        Feature vector construction, optional StandardScaler transform,
+        model dispatch (XGBoost / RF / LR / LSTM / Ensemble), unit conversion,
+        and empirical confidence interval computation are all handled here.
 
         Args:
-            order_data: Dictionary containing order parameters
-            model_name: Model to use
-            output_unit: Desired output unit
+            order_data: Dictionary of encoded order parameters (9 features).
+            model_name: One of 'xgboost', 'random_forest', 'linear_regression',
+                        'lstm', or 'ensemble'.
+            output_unit: Desired output unit — 'meters' or 'yards'.
 
         Returns:
-            PredictionResult: Prediction results with confidence intervals
+            PredictionResult: Prediction with confidence bounds, dual-unit values,
+                              model name, and timestamp.
 
         Raises:
-            PredictionError: If prediction calculation fails
+            PredictionError: If feature construction, inference, or unit
+                             conversion fails.
         """
         try:
             model = self.get_model(model_name)
 
-            # Build feature vector
+            # Build feature vector (9 features — must match FEATURES list in train_models.py)
             features = np.array([[
                 order_data['order_quantity'],
                 order_data['fabric_width_cm'],
@@ -848,6 +854,7 @@ class ModelManager:
                 order_data['garment_type_encoded'],
                 order_data['fabric_type_encoded'],
                 order_data['pattern_complexity_encoded'],
+                order_data.get('season_encoded', 1),  # default=1 (Spring) for back-compat
             ]])
 
             # Scale features if in production mode
@@ -859,29 +866,39 @@ class ModelManager:
 
             # Predict based on model type
             if model_name == "ensemble":
-                # model here is the ensemble spec dict
-                prediction_base = self._predict_ensemble(features, model)
+                # Ensemble spec is a dict {"model_names": [...], "weights": {...}}.
+                # Compute weighted average of all sub-model predictions.
+                spec = model
+                if isinstance(spec, dict) and "weights" in spec:
+                    pred_accum, weight_accum = 0.0, 0.0
+                    for sub_name in spec.get("model_names", list(spec["weights"].keys())):
+                        sub_model = self.models.get(sub_name)
+                        if sub_model is None:
+                            continue
+                        w = spec["weights"].get(sub_name, 0.0)
+                        if sub_name == "lstm" and TENSORFLOW_AVAILABLE:
+                            fr = features.reshape(features.shape[0], 1, features.shape[1])
+                            sp = float(sub_model.predict(fr, verbose=0).flatten()[0])
+                        else:
+                            sp = float(sub_model.predict(features)[0])
+                        pred_accum   += w * sp
+                        weight_accum += w
+                    prediction_base = pred_accum / weight_accum if weight_accum > 0 else pred_accum
+                else:
+                    # Fallback: spec is a plain sklearn model
+                    prediction_base = float(model.predict(features)[0])
             elif model_name == "lstm":
                 # LSTM requires 3D input: (samples, timesteps, features)
                 features_lstm = features.reshape(features.shape[0], 1, features.shape[1])
                 prediction_array = model.predict(features_lstm, verbose=0)
                 prediction_base = float(prediction_array.flatten()[0])
             else:
-                # Traditional ML models
+                # Traditional ML models: XGBoost, Random Forest, Linear Regression
                 prediction_base = float(model.predict(features)[0])
 
-            # Validate prediction — Linear Regression can extrapolate below zero
-            # for small/unusual orders. Floor at a physically meaningful minimum
-            # (1 meter) rather than crashing, and log a warning.
-            if not np.isfinite(prediction_base):
-                raise PredictionError(f"Model returned non-finite prediction: {prediction_base}")
-            if prediction_base <= 0:
-                logger.warning(
-                    f"{model_name} predicted {prediction_base:.3f} m (<=0) for this input — "
-                    f"likely extrapolation outside training range. Clamping to minimum."
-                )
-                # Floor = order_quantity * 0.5 m/garment (absolute bare minimum)
-                prediction_base = max(1.0, order_data.get('order_quantity', 1) * 0.5)
+            # Validate prediction
+            if not np.isfinite(prediction_base) or prediction_base <= 0:
+                raise PredictionError(f"Invalid prediction value: {prediction_base}")
 
             # Convert to meters first (if needed)
             metadata_unit = self.models.get('metadata', {}).get('unit', 'meters')
@@ -900,15 +917,38 @@ class ModelManager:
                 prediction_alternate = UnitConverter.meters_to_yards(prediction_m)
                 unit_alternate = 'yards'
 
-            # Calculate confidence intervals (5% margin)
-            # Note: For LSTM, could use MC Dropout for better uncertainty estimates
+            # Confidence intervals — use empirical 90th-percentile residuals from
+            # model_metadata.json if available, otherwise fall back to model-specific
+            # fractions derived from typical validation MAPE.
+            # Confidence intervals — use empirical ci_fraction from metadata if it is a
+            # genuine fraction (<1.0). Guards against RMSE/MAE values (e.g. 28.4, 88.7)
+            # being stored in ci_bounds and getting clamped to 50% CI bands.
+            _ci_meta_bounds = (self.models.get('metadata') or {}).get('models', {}).get(
+                model_name, {}).get('ci_bounds', {})
+            _raw_frac = _ci_meta_bounds.get('ci_fraction', None)
+            ci_bounds = _ci_meta_bounds if (_raw_frac is not None and float(_raw_frac) < 1.0) else {}
+            ci_frac = ci_bounds.get('ci_fraction', {
+                'ensemble':         0.020,
+                'xgboost':          0.028,
+                'random_forest':    0.032,
+                'lstm':             0.035,
+                'linear_regression':0.065,
+            }.get(model_name, 0.050))
+            # Safety clamp: ci_frac must be a fractional value (0.5–50% of prediction).
+            # Guards against rmse/mape values (e.g. 28.4, 88.7) being accidentally
+            # read as ci_fraction, which would produce absurdly wide CI bands.
+            ci_frac = float(np.clip(ci_frac, 0.005, 0.50))
+
+            confidence_lower = max(prediction * (1.0 - ci_frac), 0.001)
+            confidence_upper = prediction * (1.0 + ci_frac)
+
             return PredictionResult(
                 prediction=prediction,
                 prediction_alternate=prediction_alternate,
                 unit=output_unit,
                 unit_alternate=unit_alternate,
-                confidence_lower=prediction * 0.95,
-                confidence_upper=prediction * 1.05,
+                confidence_lower=confidence_lower,
+                confidence_upper=confidence_upper,
                 model_name=model_name,
                 timestamp=datetime.now()
             )
@@ -916,19 +956,15 @@ class ModelManager:
         except PredictionError:
             raise
         except Exception as e:
-            logger.error(f"Prediction error: {e}")
+            logger.error(f"Prediction error ({model_name}): {e}")
             logger.debug(traceback.format_exc())
-            raise PredictionError(f"Failed to calculate prediction: {e}") from e
+            raise PredictionError(
+                f"Failed to calculate prediction for '{model_name}': {type(e).__name__}: {e}"
+            ) from e
 
 
-@st.cache_resource
-def get_model_manager() -> "ModelManager":
-    """Return a singleton ModelManager, cached across reruns."""
-    return ModelManager()
-
-
-# Initialize model manager (cached singleton)
-model_manager = get_model_manager()
+# Initialize model manager
+model_manager = ModelManager()
 
 
 # ============================================================================
@@ -939,65 +975,109 @@ class DataGenerator:
     """
     Synthetic data generation for demonstration and testing.
 
-    Developer: Azim Mahmud | Version 1.0.0
+    Developer: Azim Mahmud | Version 3.0.0
     """
 
     @staticmethod
     @st.cache_data(ttl=3600)  # Cache for 1 hour
     def generate_historical_data(n_samples: int = 500) -> pd.DataFrame:
         """
-        Generate synthetic historical production data.
+        Generate synthetic historical production data for dashboard visualisation.
+
+        Consumption is computed from the same deterministic signal used by
+        data_generation_script.py so dashboard statistics are physically
+        meaningful and consistent with model training data.
 
         Args:
-            n_samples: Number of records to generate
+            n_samples: Number of records to generate (default 500).
 
         Returns:
-            pd.DataFrame: Historical production data with fabric metrics
+            pd.DataFrame: Historical production data with fabric metrics.
         """
-        np.random.seed(42)
+        rng = np.random.default_rng(42)
+
+        garment_types = rng.choice(AppConfig.GARMENT_TYPES, n_samples)
+        fabric_types  = rng.choice(AppConfig.FABRIC_TYPES,  n_samples)
+        complexities  = rng.choice(AppConfig.PATTERN_COMPLEXITIES, n_samples)
+        seasons       = rng.choice(AppConfig.SEASONS, n_samples)
+        width_inches  = rng.choice(AppConfig.FABRIC_WIDTHS_INCHES, n_samples)
+        width_cm      = width_inches * 2.54
+
+        order_quantities = rng.integers(100, 5001, n_samples).astype(float)
+        marker_eff   = rng.normal(85.0, 4.0, n_samples).clip(70, 95)
+        defect_rate  = rng.exponential(1.8, n_samples).clip(0, 10)
+        op_exp       = rng.integers(1, 21, n_samples).astype(float)
+
+        # Garment base consumption (m) at standard 160 cm width
+        STANDARD_WIDTH = 160.0
+        COMPLEXITY_MULT = {'Simple': 1.00, 'Medium': 1.15, 'Complex': 1.35}
+        SEASONAL_IMPACT = {'Spring': 0.010, 'Summer': -0.008, 'Fall': 0.005, 'Winter': 0.018}
+        BOM_BUFFER = AppConfig.DEFAULT_BOM_BUFFER
+
+        base_per_unit = np.array([
+            AppConfig.GARMENT_BASE_CONSUMPTION_M[g] for g in garment_types
+        ])
+        base_per_unit *= (STANDARD_WIDTH / width_cm)
+        base_per_unit *= np.array([COMPLEXITY_MULT[c] for c in complexities])
+
+        planned_bom_m = order_quantities * base_per_unit * BOM_BUFFER
+
+        # Deterministic adjustment factors (same as data_generation_script.py)
+        efficiency_factor = 1.0 - (marker_eff - 85.0) / 100.0 * 0.40
+        defect_factor     = 1.0 + defect_rate / 100.0
+        exp_factor        = 1.0 + np.exp(-op_exp / 15.0) * 0.04
+        seasonal_factor   = 1.0 + np.array([SEASONAL_IMPACT[s] for s in seasons])
+        size_factor       = 1.0 - 0.03 * np.log1p(order_quantities / 1000.0)
+        noise             = rng.normal(0.0, 0.020, n_samples)
+
+        actual_m = (
+            planned_bom_m
+            * efficiency_factor * defect_factor
+            * exp_factor * seasonal_factor * size_factor
+            * (1.0 + noise)
+        ).clip(planned_bom_m * 0.85, planned_bom_m * 1.15)
 
         data = {
-            'Order_ID': [f'ORD_{str(i).zfill(6)}' for i in range(1, n_samples + 1)],
-            'Date': pd.date_range(start='2024-01-01', periods=n_samples, freq='D'),
-            'Order_Quantity': np.random.randint(100, 5000, n_samples),
-            'Garment_Type': np.random.choice(AppConfig.GARMENT_TYPES, n_samples),
-            'Fabric_Type': np.random.choice(AppConfig.FABRIC_TYPES, n_samples),
-            'Fabric_Width_inches': np.random.choice(AppConfig.FABRIC_WIDTHS_INCHES, n_samples),
-            'Pattern_Complexity': np.random.choice(AppConfig.PATTERN_COMPLEXITIES, n_samples),
-            'Season': np.random.choice(AppConfig.SEASONS, n_samples),
-            'Marker_Efficiency_%': np.random.normal(85, 5, n_samples).clip(70, 95),
-            'Expected_Defect_Rate_%': np.random.exponential(2, n_samples).clip(0, 10),
-            'Operator_Experience_Years': np.random.randint(1, 20, n_samples),
+            'Order_ID':                  [f'ORD_{str(i).zfill(6)}' for i in range(1, n_samples + 1)],
+            'Date':                      pd.date_range(start='2024-01-01', periods=n_samples, freq='D'),
+            'Order_Quantity':            order_quantities.astype(int),
+            'Garment_Type':              garment_types,
+            'Fabric_Type':               fabric_types,
+            'Fabric_Width_inches':       width_inches,
+            'Pattern_Complexity':        complexities,
+            'Season':                    seasons,
+            'Marker_Efficiency_%':       marker_eff,
+            'Expected_Defect_Rate_%':    defect_rate,
+            'Operator_Experience_Years': op_exp.astype(int),
+            'Planned_BOM_m':             planned_bom_m,
+            'Actual_Consumption_m':      actual_m,
         }
 
         df = pd.DataFrame(data)
-        df['Planned_BOM_m'] = np.random.normal(5000, 2000, n_samples).clip(500, 15000)
-        df['Actual_Consumption_m'] = df['Planned_BOM_m'] * np.random.normal(1.05, 0.08, n_samples).clip(0.9, 1.3)
+        df['Planned_BOM_yards']          = df['Planned_BOM_m']          * UnitConverter.METERS_TO_YARDS
+        df['Actual_Consumption_yards']   = df['Actual_Consumption_m']   * UnitConverter.METERS_TO_YARDS
+        df['Variance_m']                 = df['Actual_Consumption_m']   - df['Planned_BOM_m']
+        df['Variance_yards']             = df['Variance_m']             * UnitConverter.METERS_TO_YARDS
+        df['Variance_%']                 = (df['Variance_m'] / df['Planned_BOM_m']) * 100
 
-        # Add yards
-        df['Planned_BOM_yards'] = df['Planned_BOM_m'] * UnitConverter.METERS_TO_YARDS
-        df['Actual_Consumption_yards'] = df['Actual_Consumption_m'] * UnitConverter.METERS_TO_YARDS
-
-        df['Variance_m'] = df['Actual_Consumption_m'] - df['Planned_BOM_m']
-        df['Variance_yards'] = df['Actual_Consumption_yards'] - df['Planned_BOM_yards']
-        df['Variance_%'] = (df['Variance_m'] / df['Planned_BOM_m']) * 100
-
-        logger.info(f"Generated {n_samples} samples of historical data")
+        logger.info(f"Generated {n_samples} historical records | "
+                    f"avg|Variance%|={df['Variance_%'].abs().mean():.2f}%")
         return df
 
     @staticmethod
     def get_batch_template() -> pd.DataFrame:
-        """Get template DataFrame for batch upload"""
+        """Batch upload template. Season is a required training feature (added v3.0)."""
         return pd.DataFrame({
-            'Order_ID': ['ORD_001', 'ORD_002'],
-            'Order_Quantity': [1000, 1500],
-            'Garment_Type': ['T-Shirt', 'Pants'],
-            'Fabric_Type': ['Cotton', 'Denim'],
-            'Fabric_Width_inches': [63, 59],
-            'Pattern_Complexity': ['Simple', 'Medium'],
-            'Marker_Efficiency_%': [85, 88],
-            'Expected_Defect_Rate_%': [2, 3],
-            'Operator_Experience_Years': [5, 8]
+            'Order_ID':                  ['ORD_001', 'ORD_002', 'ORD_003'],
+            'Order_Quantity':            [1000, 1500, 2000],
+            'Garment_Type':              ['T-Shirt', 'Pants', 'Jacket'],
+            'Fabric_Type':               ['Cotton', 'Denim', 'Polyester'],
+            'Fabric_Width_inches':       [63, 59, 63],
+            'Pattern_Complexity':        ['Simple', 'Medium', 'Complex'],
+            'Season':                    ['Spring', 'Summer', 'Fall'],
+            'Marker_Efficiency_%':       [85, 88, 82],
+            'Expected_Defect_Rate_%':    [2, 3, 4],
+            'Operator_Experience_Years': [5, 8, 3],
         })
 
 
@@ -1007,30 +1087,31 @@ class DataGenerator:
 
 class EncodingMaps:
     """
-    Categorical encoding mappings for ML models.
+    Categorical encoding maps for ML inference.
 
-    CRITICAL: These values MUST match sklearn's LabelEncoder, which sorts
-    categories ALPHABETICALLY — not in the order they appear in the config list.
-    Mismatched encodings silently pass wrong garment/complexity types to the
-    model, causing wildly incorrect predictions.
+    All integer assignments are alphabetically sorted, matching the output of
+    sklearn.preprocessing.LabelEncoder fitted on the sorted category lists
+    defined in TrainingConfig.CATEGORICAL_FEATURES (train_models.py).
 
-    To verify: LabelEncoder().fit(categories).transform(categories)
+    Any change here must be mirrored in TrainingConfig.CATEGORICAL_FEATURES
+    and the data generator constants.
     """
 
-    # Alphabetical order: Dress=0, Jacket=1, Pants=2, Shirt=3, T-Shirt=4
+    # Alphabetical order — Dress=0, Jacket=1, Pants=2, Shirt=3, T-Shirt=4
     GARMENT_TYPE = {'Dress': 0, 'Jacket': 1, 'Pants': 2, 'Shirt': 3, 'T-Shirt': 4}
-
-    # Alphabetical order: Cotton=0, Cotton-Blend=1, Denim=2, Polyester=3, Silk=4
+    # Cotton=0, Cotton-Blend=1, Denim=2, Polyester=3, Silk=4
     FABRIC_TYPE = {'Cotton': 0, 'Cotton-Blend': 1, 'Denim': 2, 'Polyester': 3, 'Silk': 4}
-
-    # Alphabetical order: Complex=0, Medium=1, Simple=2
+    # Complex=0, Medium=1, Simple=2
     COMPLEXITY = {'Complex': 0, 'Medium': 1, 'Simple': 2}
+    # Fall=0, Spring=1, Summer=2, Winter=3
+    SEASON = {'Fall': 0, 'Spring': 1, 'Summer': 2, 'Winter': 3}
+    # Human-readable model names → internal model keys
     MODEL_DISPLAY = {
-        'Ensemble ⭐ (Best Combined)': ModelType.ENSEMBLE.value,
-        'XGBoost (Recommended)': ModelType.XGBOOST.value,
-        'Random Forest': ModelType.RANDOM_FOREST.value,
-        'LSTM Neural Network': ModelType.LSTM.value,  # NEW
-        'Linear Regression': ModelType.LINEAR_REGRESSION.value
+        'Ensemble (Best)':     ModelType.ENSEMBLE.value,
+        'XGBoost':             ModelType.XGBOOST.value,
+        'Random Forest':       ModelType.RANDOM_FOREST.value,
+        'LSTM Neural Network': ModelType.LSTM.value,
+        'Linear Regression':   ModelType.LINEAR_REGRESSION.value,
     }
 
 
@@ -1038,25 +1119,61 @@ class EncodingMaps:
 # SESSION STATE MANAGER
 # ============================================================================
 
+# ── Encoding sanity check: validates hardcoded maps match sorted categories ──
+def _verify_encoding_maps() -> None:
+    """
+    Assert that EncodingMaps match what sklearn LabelEncoder would produce.
+    Runs once at startup. Raises AssertionError if encoding drift is detected.
+    """
+    from sklearn.preprocessing import LabelEncoder
+    checks = [
+        ("GARMENT_TYPE",  EncodingMaps.GARMENT_TYPE,
+         ["Dress","Jacket","Pants","Shirt","T-Shirt"]),
+        ("FABRIC_TYPE",   EncodingMaps.FABRIC_TYPE,
+         ["Cotton","Cotton-Blend","Denim","Polyester","Silk"]),
+        ("COMPLEXITY",    EncodingMaps.COMPLEXITY,
+         ["Complex","Medium","Simple"]),
+        ("SEASON",        EncodingMaps.SEASON,
+         ["Fall","Spring","Summer","Winter"]),
+    ]
+    for name, enc_map, categories in checks:
+        le = LabelEncoder()
+        le.fit(categories)
+        for cat, expected_int in zip(categories, le.transform(categories)):
+            actual = enc_map.get(cat)
+            assert actual == int(expected_int), (
+                f"EncodingMaps.{name}['{cat}'] = {actual}, "
+                f"but LabelEncoder gives {int(expected_int)}. "
+                f"Update the hardcoded map to match alphabetical order."
+            )
+
+try:
+    _verify_encoding_maps()
+    logger.info("✅ Encoding maps verified — all match LabelEncoder alphabetical order")
+except AssertionError as _enc_err:
+    logger.critical(f"❌ ENCODING MAP MISMATCH: {_enc_err}")
+    raise
+
+
 class SessionManager:
     """
     Manage Streamlit session state with proper initialization.
 
-    Developer: Azim Mahmud | Version 1.0.0
+    Developer: Azim Mahmud | Version 3.0.0
     """
 
     @staticmethod
     def initialize() -> None:
         """Initialize all session state variables"""
         defaults = {
-            'unit_preference': UnitType.METERS.value,
-            'show_dual_units': True,
-            'predictions_count': 0,
-            'total_savings': 0.0,
-            'session_start': datetime.now(),
-            'last_activity': datetime.now(),
+            'unit_preference':    UnitType.METERS.value,
+            'show_dual_units':    True,
+            'predictions_count':  0,
+            'total_savings':      0.0,
+            'session_start':      datetime.now(),
+            'last_activity':      datetime.now(),
             'prediction_history': [],
-            'page_history': []
+            'page_history':       [],
         }
 
         for key, value in defaults.items():
@@ -1072,12 +1189,13 @@ class SessionManager:
     @staticmethod
     def is_session_valid() -> bool:
         """Check if session is still valid (not timed out)"""
-        if 'last_activity' not in st.session_state:
+        if 'session_start' not in st.session_state:
             return True
 
-        last = st.session_state.get('last_activity', datetime.now())
-        elapsed = (datetime.now() - last).total_seconds()
-        return (elapsed / 60) < AppConfig.SESSION_TIMEOUT_MINUTES
+        elapsed = (datetime.now() - st.session_state.last_activity).total_seconds()
+        timeout_minutes = elapsed / 60
+
+        return timeout_minutes < AppConfig.SESSION_TIMEOUT_MINUTES
 
     @staticmethod
     def add_prediction(result: PredictionResult) -> None:
@@ -1109,7 +1227,7 @@ class UIHelpers:
     """
     User Interface helper functions for consistent styling and display.
 
-    Developer: Azim Mahmud | Version 1.0.0
+    Developer: Azim Mahmud | Version 3.0.0
     """
 
     CUSTOM_CSS = """
@@ -1176,22 +1294,11 @@ class UIHelpers:
         st.markdown(UIHelpers.CUSTOM_CSS, unsafe_allow_html=True)
 
     @staticmethod
-    def show_success(message: str) -> None:
-        """Display success message"""
-        st.success(f"✅ {message}")
-
-    @staticmethod
-    def show_info(message: str) -> None:
-        """Display info message"""
-        st.info(f"ℹ️ {message}")
-
-    @staticmethod
     def show_error(message: str, details: Optional[str] = None) -> None:
         """Display error message with optional details"""
         st.error(f"❌ {message}")
         if details and AppConfig.DEBUG:
-            with st.expander("Error Details"):
-                st.write(details)
+            st.expander("Error Details").write(details)
         logger.error(f"{message} - {details if details else ''}")
 
     @staticmethod
@@ -1251,37 +1358,56 @@ class DashboardPage:
         st.title("🧵 Fabric Forecasting Dashboard")
         st.markdown(f"### AI-Powered Material Planning | Active Unit: **{unit_pref.upper()}**")
 
-        # Key metrics — blend session-live data with demo totals
-        session_stats = SessionManager.get_session_stats()
-        session_preds = session_stats.get('predictions_count', 0)
-        session_savings = session_stats.get('total_savings', 0.0)
+        # Load historical data first so metrics are computed from real values
+        try:
+            df_history = DataGenerator.generate_historical_data()
+        except Exception as e:
+            UIHelpers.show_error("Failed to load dashboard data", str(e))
+            return
 
-        # Add session activity on top of demo baseline
-        total_preds_display = f"{12453 + session_preds:,}"
-        total_savings_display = f"${184500 + session_savings:,.0f}"
-        preds_delta = f"↑ {session_preds} this session" if session_preds > 0 else "↑ 234 this week"
-        savings_delta = f"↑ ${session_savings:,.0f} this session" if session_savings > 0 else "↑ $12,400"
+        # Compute summary metrics from historical dataset
+        session_stats   = SessionManager.get_session_stats()
+        avg_var_pct     = df_history['Variance_%'].abs().mean()
+        accuracy_pct    = 100.0 - avg_var_pct
+        total_waste_usd = (
+            df_history['Variance_m'].clip(lower=0)
+            * df_history['Garment_Type'].map(
+                {g: AppConfig.FABRIC_COST_PER_METER.get('Cotton',
+                 AppConfig.DEFAULT_FABRIC_COST_PER_METER) for g in AppConfig.GARMENT_TYPES}
+            ).fillna(AppConfig.DEFAULT_FABRIC_COST_PER_METER)
+        ).sum()
+        pct_over = (df_history['Variance_m'] > 0).mean() * 100
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("📊 Total Predictions", total_preds_display, preds_delta)
+            st.metric(
+                "📊 Session Predictions",
+                f"{session_stats['predictions_count']:,}",
+                help="Number of predictions made in this session"
+            )
         with col2:
-            st.metric("🎯 Avg Accuracy", "97.8%", "↑ 2.3%")
+            st.metric(
+                "🎯 Dataset Avg Accuracy",
+                f"{accuracy_pct:.1f}%",
+                help=f"100% − avg |Variance%| across {len(df_history):,} demo records"
+            )
         with col3:
-            st.metric("💰 Cost Savings", total_savings_display, savings_delta)
+            st.metric(
+                "💰 Demo Waste Cost",
+                f"${total_waste_usd:,.0f}",
+                help="Total over-consumption cost in demo dataset at Cotton baseline rate"
+            )
         with col4:
-            st.metric("🌍 Waste Reduced", "62.4%", "↑ 3.1%")
+            st.metric(
+                "📈 Over-consumption Rate",
+                f"{pct_over:.1f}%",
+                help="Fraction of orders where actual > planned BOM"
+            )
 
         st.markdown("---")
 
-        # Load and display data
-        try:
-            df_history = DataGenerator.generate_historical_data()
-            DashboardPage._render_charts(df_history, unit_pref)
-            DashboardPage._render_statistics(df_history, unit_pref, show_dual_units)
-            DashboardPage._render_session_history(unit_pref)
-        except Exception as e:
-            UIHelpers.show_error("Failed to load dashboard data", str(e))
+        DashboardPage._render_charts(df_history, unit_pref)
+        DashboardPage._render_statistics(df_history, unit_pref, show_dual_units)
 
     @staticmethod
     def _render_charts(df: pd.DataFrame, unit_pref: str) -> None:
@@ -1320,25 +1446,50 @@ class DashboardPage:
             st.plotly_chart(fig, use_container_width=True)
 
         with col2:
-            st.subheader("🎯 Model Performance")
-
-            model_data = pd.DataFrame({
-                'Model': ['Ensemble', 'XGBoost', 'Random Forest', 'LSTM', 'Traditional BOM'],
-                'Accuracy': [98.5, 97.8, 96.5, 96.2, 75.3]
-            })
+            st.subheader("🎯 Model Performance (R²)")
+            # Pull from metadata if production models are loaded; else use demo values
+            meta_models = (model_manager.models.get('metadata') or {}).get('models', {})
+            if meta_models and model_manager.mode == ProcessingMode.PRODUCTION:
+                model_names = ['Ensemble', 'XGBoost', 'Random Forest', 'LSTM', 'Linear Regression']
+                meta_keys   = ['ensemble', 'xgboost', 'random_forest', 'lstm', 'linear_regression']
+                r2_vals = [
+                    round(meta_models[k]['r2'] * 100, 2) if k in meta_models else None
+                    for k in meta_keys
+                ]
+                colors = ['#8B5CF6', '#2ecc71', '#3498db', '#9b59b6', '#e74c3c']
+                model_data = pd.DataFrame({
+                    'Model':    [n for n, v in zip(model_names, r2_vals) if v is not None],
+                    'R2_pct':   [v for v in r2_vals if v is not None],
+                    'Color':    [c for c, v in zip(colors, r2_vals) if v is not None],
+                })
+            else:
+                model_data = pd.DataFrame({
+                    'Model':  ['Ensemble', 'XGBoost', 'Random Forest', 'LSTM', 'Traditional BOM'],
+                    'R2_pct': [98.7, 98.2, 97.5, 97.0, 75.3],
+                    'Color':  ['#8B5CF6', '#2ecc71', '#3498db', '#9b59b6', '#e74c3c'],
+                })
 
             fig = go.Figure(data=[
-                go.Bar(x=model_data['Model'], y=model_data['Accuracy'],
-                      marker_color=['#f39c12', '#2ecc71', '#3498db', '#9b59b6', '#e74c3c'])
+                go.Bar(
+                    x=model_data['Model'],
+                    y=model_data['R2_pct'],
+                    marker_color=model_data['Color'],
+                    text=[f"{v:.1f}%" for v in model_data['R2_pct']],
+                    textposition='outside',
+                )
             ])
-            fig.update_layout(height=350, yaxis_title='Accuracy (%)',
-                             yaxis=dict(range=[0, 100]))
+            fig.update_layout(
+                height=350,
+                yaxis_title='R² × 100 (%)',
+                yaxis=dict(range=[0, 103]),
+                margin=dict(t=20),
+            )
             st.plotly_chart(fig, use_container_width=True)
 
     @staticmethod
     def _render_statistics(df: pd.DataFrame, unit_pref: str, show_dual_units: bool) -> None:
         """Render dashboard statistics"""
-        variance_col = 'Variance_m' if unit_pref == 'meters' else 'Variance_yards'
+        variance_col = 'Variance_yards' if unit_pref == 'yards' else 'Variance_m'
 
         col1, col2 = st.columns(2)
 
@@ -1360,33 +1511,6 @@ class DashboardPage:
             ])
             fig.update_layout(xaxis_title=f'Avg Variance ({unit_pref})')
             st.plotly_chart(fig, use_container_width=True)
-
-
-    @staticmethod
-    def _render_session_history(unit_pref: str) -> None:
-        """Render session prediction history if any predictions have been made"""
-        history = st.session_state.get('prediction_history', [])
-        if not history:
-            return
-
-        st.markdown("---")
-        st.subheader("🕐 This Session's Predictions")
-
-        rows = []
-        for h in reversed(history[-20:]):  # Show most recent 20
-            pred = h.get('prediction', 0)
-            unit = h.get('unit', unit_pref)
-            rows.append({
-                'Time': h.get('timestamp', '')[:19].replace('T', ' '),
-                'Model': h.get('model_name', '').replace('_', ' ').title(),
-                f'Prediction ({unit})': f"{pred:.2f}",
-                f'Alt ({h.get("unit_alternate","")})': f"{h.get('prediction_alternate', 0):.2f}",
-                'CI Lower': f"{h.get('confidence_lower', 0):.2f}",
-                'CI Upper': f"{h.get('confidence_upper', 0):.2f}",
-            })
-
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-        st.caption(f"Showing last {min(len(history), 20)} predictions from this session.")
 
 
 class SinglePredictionPage:
@@ -1462,26 +1586,36 @@ class SinglePredictionPage:
 
         with col3:
             st.subheader("⚙️ Production Parameters")
+            season = st.selectbox(
+                "Season",
+                AppConfig.SEASONS,
+                index=0,
+                key="sp_season",
+                help="Season affects fabric consumption by ±1–2%"
+            )
             marker_efficiency = st.slider(
                 "Marker Efficiency (%)",
                 AppConfig.MARKER_EFFICIENCY_MIN,
                 AppConfig.MARKER_EFFICIENCY_MAX,
                 85.0, 0.5,
-                key="sp_efficiency"
+                key="sp_efficiency",
+                help="Training domain: 70–95%"
             )
             defect_rate = st.slider(
                 "Expected Defect Rate (%)",
                 AppConfig.DEFECT_RATE_MIN,
                 AppConfig.DEFECT_RATE_MAX,
                 2.0, 0.5,
-                key="sp_defect"
+                key="sp_defect",
+                help="Training domain: 0–10%"
             )
             operator_experience = st.slider(
                 "Operator Experience (years)",
                 AppConfig.OPERATOR_EXPERIENCE_MIN,
                 AppConfig.OPERATOR_EXPERIENCE_MAX,
                 5,
-                key="sp_experience"
+                key="sp_experience",
+                help="Training domain: 1–20 years"
             )
 
         model_choice = st.selectbox(
@@ -1500,17 +1634,19 @@ class SinglePredictionPage:
             garment_type = st.session_state.get('sp_garment', 'T-Shirt')
             fabric_type = st.session_state.get('sp_fabric', 'Cotton')
             pattern_complexity = st.session_state.get('sp_complexity', 'Simple')
+            season = st.session_state.get('sp_season', 'Spring')
             marker_efficiency = st.session_state.get('sp_efficiency', 85.0)
             defect_rate = st.session_state.get('sp_defect', 2.0)
             operator_experience = st.session_state.get('sp_experience', 5)
-            model_choice = st.session_state.get('sp_model', 'XGBoost (Recommended)')
+            model_choice = st.session_state.get('sp_model', 'Ensemble (Best)')
 
             # Determine fabric width
+            # Fallbacks MUST match the form widget defaults (index=0 of each list)
             if unit_pref == 'yards':
-                fabric_width_in = st.session_state.get('sp_width_in', 59)
+                fabric_width_in = st.session_state.get('sp_width_in', AppConfig.FABRIC_WIDTHS_INCHES[0])
                 fabric_width_cm = UnitConverter.inches_to_cm(fabric_width_in)
             else:
-                fabric_width_cm = st.session_state.get('sp_width_cm', 150)
+                fabric_width_cm = st.session_state.get('sp_width_cm', AppConfig.FABRIC_WIDTHS_CM[0])
                 fabric_width_in = UnitConverter.cm_to_inches(fabric_width_cm)
 
             # Create and validate order input
@@ -1523,29 +1659,28 @@ class SinglePredictionPage:
                 pattern_complexity=pattern_complexity,
                 marker_efficiency=float(marker_efficiency),
                 defect_rate=float(defect_rate),
-                operator_experience=int(operator_experience)
+                operator_experience=int(operator_experience),
+                season=season
             )
 
             order_input.validate()
 
-            # Encode categoricals — prefer saved label_encoders.pkl as the
-            # authoritative source so inference always matches training exactly.
-            encoders = model_mgr.models.get('encoders')
-            if encoders and isinstance(encoders, dict):
-                try:
-                    garment_enc = int(encoders['garment_type'].transform([order_input.garment_type])[0])
-                    fabric_enc  = int(encoders['fabric_type'].transform([order_input.fabric_type])[0])
-                    complex_enc = int(encoders['pattern_complexity'].transform([order_input.pattern_complexity])[0])
-                    logger.info("Using saved label_encoders.pkl for categorical encoding")
-                except Exception as enc_err:
-                    logger.warning(f"label_encoders.pkl failed ({enc_err}), falling back to hardcoded maps")
-                    garment_enc = EncodingMaps.GARMENT_TYPE[order_input.garment_type]
-                    fabric_enc  = EncodingMaps.FABRIC_TYPE[order_input.fabric_type]
-                    complex_enc = EncodingMaps.COMPLEXITY[order_input.pattern_complexity]
-            else:
-                garment_enc = EncodingMaps.GARMENT_TYPE[order_input.garment_type]
-                fabric_enc  = EncodingMaps.FABRIC_TYPE[order_input.fabric_type]
-                complex_enc = EncodingMaps.COMPLEXITY[order_input.pattern_complexity]
+            # Out-of-training-domain warnings (extrapolation flag)
+            ood_warnings = []
+            if order_input.order_quantity < 100 or order_input.order_quantity > 5000:
+                ood_warnings.append(f"Order Quantity {order_input.order_quantity:,} is outside training range 100–5,000")
+            if not (70.0 <= order_input.marker_efficiency <= 95.0):
+                ood_warnings.append(f"Marker Efficiency {order_input.marker_efficiency:.1f}% is outside training range 70–95%")
+            if order_input.defect_rate > 10.0:
+                ood_warnings.append(f"Defect Rate {order_input.defect_rate:.1f}% exceeds training maximum 10%")
+            if not (1 <= order_input.operator_experience <= 20):
+                ood_warnings.append(f"Operator Experience {order_input.operator_experience} yrs is outside training range 1–20")
+            if ood_warnings:
+                st.warning(
+                    "⚠️ **Extrapolation Warning** — The following inputs are outside the model's "
+                    "training domain. Predictions may be unreliable:\n" +
+                    "\n".join(f"• {w}" for w in ood_warnings)
+                )
 
             # Prepare data for prediction
             order_data = {
@@ -1554,9 +1689,10 @@ class SinglePredictionPage:
                 'marker_efficiency': order_input.marker_efficiency,
                 'defect_rate': order_input.defect_rate,
                 'operator_experience': order_input.operator_experience,
-                'garment_type_encoded': garment_enc,
-                'fabric_type_encoded': fabric_enc,
-                'pattern_complexity_encoded': complex_enc
+                'garment_type_encoded': EncodingMaps.GARMENT_TYPE[order_input.garment_type],
+                'fabric_type_encoded': EncodingMaps.FABRIC_TYPE[order_input.fabric_type],
+                'pattern_complexity_encoded': EncodingMaps.COMPLEXITY[order_input.pattern_complexity],
+                'season_encoded': EncodingMaps.SEASON.get(order_input.season, 1),
             }
 
             # Get prediction
@@ -1570,25 +1706,6 @@ class SinglePredictionPage:
             SessionManager.update_activity()
 
             UIHelpers.show_success("Prediction Complete!")
-
-            # Warn if order quantity is far below training distribution
-            # (heuristic: below 25th percentile of typical training data)
-            if int(order_quantity) < 500 and model_choice not in ['LSTM Neural Network', 'Ensemble ⭐ (Best Combined)']:
-                st.warning(
-                    f"⚠️ **Extrapolation Warning:** Order quantity {int(order_quantity)} is small relative to "
-                    f"the training data range. **{model_choice}** may be unreliable here — "
-                    f"consider using **LSTM Neural Network** or **Ensemble** for small orders, "
-                    f"or retrain on a larger dataset."
-                )
-
-            # Warn if LSTM requested but TensorFlow not installed
-            if model_choice == 'LSTM Neural Network' and not AppConfig.LSTM_AVAILABLE:
-                st.warning(
-                    "⚠️ **LSTM Unavailable:** TensorFlow is not installed in this environment. "
-                    "The prediction used **Demo Mode** fallback. Install TensorFlow and retrain "
-                    "to enable the real LSTM model."
-                )
-
             SinglePredictionPage._render_results(
                 result, order_input, fabric_width_in, fabric_width_cm,
                 unit_pref, show_dual_units, model_choice
@@ -1629,20 +1746,28 @@ class SinglePredictionPage:
                 st.caption(f"= {result.prediction_alternate:.2f} {result.unit_alternate}")
 
         with col2:
-            bom_estimate = order_input.order_quantity * AppConfig.DEFAULT_GARMENT_CONSUMPTION_BASE * AppConfig.DEFAULT_BOM_BUFFER
-            if unit_pref == 'yards':
-                bom_estimate = UnitConverter.meters_to_yards(bom_estimate)
+            # Garment-specific BOM: qty × garment_base (width-adjusted) × 1.05 buffer
+            # Base consumption is defined at standard 160cm width; adjust for actual width
+            garment_base_m = AppConfig.GARMENT_BASE_CONSUMPTION_M.get(
+                order_input.garment_type, 1.5)
+            garment_base_m_adjusted = garment_base_m * (160.0 / max(order_input.fabric_width_cm, 1.0))
+            bom_estimate_m = (order_input.order_quantity * garment_base_m_adjusted
+                              * AppConfig.DEFAULT_BOM_BUFFER)
+            bom_estimate = (UnitConverter.meters_to_yards(bom_estimate_m)
+                            if unit_pref == 'yards' else bom_estimate_m)
 
             delta_pct = ((result.prediction - bom_estimate) / bom_estimate * 100)
             st.metric(
                 label=f"📋 Traditional BOM ({unit_pref})",
                 value=f"{bom_estimate:.2f}",
                 delta=f"{delta_pct:.1f}%",
-                help="Conventional planning estimate"
+                help="Industry formula: qty × garment_base × 1.05 safety margin"
             )
 
         with col3:
-            fabric_cost = AppConfig.DEFAULT_FABRIC_COST_PER_METER
+            fabric_cost = AppConfig.FABRIC_COST_PER_METER.get(
+                order_input.fabric_type, AppConfig.DEFAULT_FABRIC_COST_PER_METER
+            )
             if unit_pref == 'yards':
                 fabric_cost = fabric_cost * UnitConverter.METERS_TO_YARDS
             estimated_cost = result.prediction * fabric_cost
@@ -1653,121 +1778,162 @@ class SinglePredictionPage:
             )
 
         with col4:
-            raw_diff = bom_estimate - result.prediction  # positive = AI needs less (true saving)
-            if raw_diff > 0:
-                # AI predicts LESS fabric than BOM → genuine saving
-                potential_savings = raw_diff * fabric_cost
-                savings_label = "💵 Potential Savings"
-                savings_delta = f"+${potential_savings:.2f} vs BOM"
-                savings_help  = f"AI needs {raw_diff:.1f} {unit_pref} less than BOM — real cost saving."
-                st.metric(
-                    label=savings_label,
-                    value=f"${potential_savings:.2f}",
-                    delta=savings_delta,
-                    help=savings_help
-                )
-                st.session_state.total_savings += potential_savings
+            diff_fabric = bom_estimate - result.prediction  # positive = ML saves vs BOM
+            potential_savings = diff_fabric * fabric_cost
+            if diff_fabric >= 0:
+                savings_label = "💵 ML Saving vs BOM"
+                savings_delta = f"−{diff_fabric:.2f} {unit_pref} vs BOM"
             else:
-                # AI predicts MORE fabric than BOM → BOM would under-order
-                shortfall_cost = abs(raw_diff) * fabric_cost
-                savings_help = (
-                    f"AI needs {abs(raw_diff):.1f} {unit_pref} MORE than BOM. "
-                    f"No savings — ordering only the BOM amount risks a "
-                    f"${shortfall_cost:.2f} emergency re-order."
-                )
-                st.metric(
-                    label="⚠️ BOM Shortfall Risk",
-                    value=f"${shortfall_cost:.2f}",
-                    delta=f"{abs(raw_diff):.1f} {unit_pref} under-ordered",
-                    delta_color="inverse",
-                    help=savings_help
-                )
+                savings_label = "⚠️ ML Overage vs BOM"
+                savings_delta = f"+{abs(diff_fabric):.2f} {unit_pref} vs BOM"
+            st.metric(
+                label=savings_label,
+                value=f"${abs(potential_savings):.2f}",
+                delta=savings_delta,
+                delta_color="normal" if diff_fabric >= 0 else "inverse",
+            )
+            st.session_state.total_savings += max(potential_savings, 0.0)
 
         # Confidence interval chart
         st.markdown("---")
-        st.subheader(f"📈 Prediction with Confidence Interval ({unit_pref})")
+        st.subheader(f"📈 Prediction with 90% Confidence Interval ({unit_pref})")
 
         fig = go.Figure()
-        x_labels = ['Lower\nBound', 'Prediction', 'Upper\nBound']
-        y_values = [result.confidence_lower, result.prediction, result.confidence_upper]
 
+        # Shaded confidence band
         fig.add_trace(go.Scatter(
-            x=x_labels, y=y_values,
-            mode='lines+markers',
-            name=f'Prediction Range ({unit_pref})',
-            line=dict(color='#1f77b4', width=3),
-            marker=dict(size=12),
-            fill='tozeroy',
-            fillcolor='rgba(31, 119, 180, 0.2)'
+            x=[0.5, 1.5, 1.5, 0.5],
+            y=[result.confidence_lower, result.confidence_lower,
+               result.confidence_upper, result.confidence_upper],
+            fill='toself',
+            fillcolor='rgba(31, 119, 180, 0.15)',
+            line=dict(color='rgba(31, 119, 180, 0.0)'),
+            name='90% Confidence Interval',
+            hoverinfo='skip',
         ))
 
-        fig.add_hline(y=bom_estimate, line_dash="dash", line_color="red",
-                     annotation_text=f"Traditional BOM ({bom_estimate:.1f} {unit_pref})")
+        # Confidence bound horizontal dashes
+        for y_val, label in [
+            (result.confidence_lower, f"Lower: {result.confidence_lower:.2f} {unit_pref}"),
+            (result.confidence_upper, f"Upper: {result.confidence_upper:.2f} {unit_pref}"),
+        ]:
+            fig.add_shape(type='line', x0=0.5, x1=1.5, y0=y_val, y1=y_val,
+                          line=dict(color='#1f77b4', width=1, dash='dot'))
+            fig.add_annotation(x=1.52, y=y_val, text=label, showarrow=False,
+                               xanchor='left', font=dict(size=11, color='#1f77b4'))
+
+        # Central prediction point
+        fig.add_trace(go.Scatter(
+            x=[1.0],
+            y=[result.prediction],
+            mode='markers+text',
+            marker=dict(color='#1f77b4', size=16, symbol='diamond'),
+            text=[f"  {result.prediction:.2f} {unit_pref}"],
+            textposition='middle right',
+            textfont=dict(size=13, color='#1f77b4'),
+            name=f'AI Prediction ({result.model_name})',
+        ))
+
+        # Traditional BOM reference line
+        fig.add_shape(type='line', x0=0.4, x1=1.6, y0=bom_estimate_m if unit_pref == 'meters' else bom_estimate,
+                      y1=bom_estimate_m if unit_pref == 'meters' else bom_estimate,
+                      line=dict(color='#e74c3c', width=2, dash='dash'))
+        bom_display = bom_estimate_m if unit_pref == 'meters' else bom_estimate
+        fig.add_annotation(
+            x=1.52, y=bom_display,
+            text=f"Traditional BOM: {bom_display:.2f} {unit_pref}",
+            showarrow=False, xanchor='left',
+            font=dict(size=11, color='#e74c3c'),
+        )
 
         fig.update_layout(
+            xaxis=dict(visible=False, range=[0.3, 2.2]),
             yaxis_title=f'Fabric Consumption ({unit_pref})',
-            height=400,
-            showlegend=False
+            height=380,
+            showlegend=True,
+            legend=dict(orientation='h', y=-0.15),
+            margin=dict(l=20, r=160, t=20, b=60),
         )
-
         st.plotly_chart(fig, use_container_width=True)
 
-        # ── Model comparison quick view ──────────────────────────────────────
-        st.markdown("---")
-        st.subheader("🤖 How All Models Compare on This Order")
-        st.caption("Simulated comparison showing each model's likely prediction for these exact inputs.")
+        # Detailed prediction breakdown — thesis-grade tabular summary
+        with st.expander("📋 Full Prediction Breakdown", expanded=False):
+            per_unit_m = result.prediction if unit_pref == 'meters' else UnitConverter.yards_to_meters(result.prediction)
+            per_unit_m_each = per_unit_m / order_input.order_quantity if order_input.order_quantity else 0
+            per_unit_alt  = result.prediction_alternate / order_input.order_quantity if order_input.order_quantity else 0
 
-        cf_disp = 1 if unit_pref == 'meters' else UnitConverter.METERS_TO_YARDS
-        pred_m = result.prediction if unit_pref == 'meters' else UnitConverter.yards_to_meters(result.prediction)
+            breakdown = {
+                "Parameter": [
+                    "Order ID",
+                    "Garment Type",
+                    "Fabric Type",
+                    "Pattern Complexity",
+                    "Season",
+                    "Order Quantity",
+                    f"Fabric Width (cm / in)",
+                    "Marker Efficiency",
+                    "Expected Defect Rate",
+                    "Operator Experience",
+                    "—",
+                    f"AI Prediction (total, {unit_pref})",
+                    f"AI Prediction (total, {result.unit_alternate})",
+                    f"Per-unit consumption (m)",
+                    f"Confidence Interval Lower ({unit_pref})",
+                    f"Confidence Interval Upper ({unit_pref})",
+                    f"Traditional BOM (total, {unit_pref})",
+                    f"BOM vs AI Δ (%)",
+                    f"Fabric Cost ($/{'meter' if unit_pref == 'meters' else 'yard'})",
+                    f"Estimated Total Cost (AI)",
+                    f"Estimated Total Cost (BOM)",
+                    f"Model Used",
+                    f"Timestamp",
+                ],
+                "Value": [
+                    order_input.order_id,
+                    order_input.garment_type,
+                    order_input.fabric_type,
+                    order_input.pattern_complexity,
+                    order_input.season,
+                    f"{order_input.order_quantity:,}",
+                    f"{order_input.fabric_width_cm:.1f} cm / {fabric_width_in:.1f} in",
+                    f"{order_input.marker_efficiency:.1f}%",
+                    f"{order_input.defect_rate:.1f}%",
+                    f"{order_input.operator_experience} yr(s)",
+                    "—",
+                    f"{result.prediction:,.3f} {unit_pref}",
+                    f"{result.prediction_alternate:,.3f} {result.unit_alternate}",
+                    f"{per_unit_m_each:.4f} m/unit",
+                    f"{result.confidence_lower:,.3f} {unit_pref}",
+                    f"{result.confidence_upper:,.3f} {unit_pref}",
+                    f"{bom_estimate:,.3f} {unit_pref}",
+                    f"{delta_pct:+.2f}%",
+                    f"${fabric_cost:.4f}/{unit_pref.rstrip('s')}",
+                    f"${estimated_cost:,.2f}",
+                    f"${bom_estimate * fabric_cost:,.2f}",
+                    {
+                        'xgboost': 'XGBoost', 'random_forest': 'Random Forest',
+                        'lstm': 'LSTM', 'linear_regression': 'Linear Regression',
+                        'ensemble': 'Ensemble'
+                    }.get(result.model_name.lower(), result.model_name.replace('_', ' ').title()),
+                    result.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                ],
+            }
+            st.dataframe(
+                pd.DataFrame(breakdown),
+                use_container_width=True,
+                hide_index=True,
+            )
 
-        # Simulated model predictions based on the actual prediction with known noise levels
-        model_compare = [
-            {"name": "Ensemble ⭐",      "color": "#f59e0b", "noise": 0.018, "is_current": model_choice == "Ensemble ⭐ (Best Combined)"},
-            {"name": "XGBoost",         "color": "#10b981", "noise": 0.021, "is_current": model_choice == "XGBoost (Recommended)"},
-            {"name": "Random Forest",   "color": "#3b82f6", "noise": 0.024, "is_current": model_choice == "Random Forest"},
-            {"name": "LSTM Neural Net", "color": "#8b5cf6", "noise": 0.026, "is_current": model_choice == "LSTM Neural Network"},
-            {"name": "Linear Reg.",     "color": "#ef4444", "noise": 0.058, "is_current": model_choice == "Linear Regression"},
-            {"name": "Trad. BOM",       "color": "#6b7280", "noise": 0.0,   "is_current": False},
-        ]
-
-        np.random.seed(int(order_input.order_quantity) % 100)
-        compare_preds = []
-        for mc in model_compare:
-            if mc["name"] == "Trad. BOM":
-                p = bom_estimate
-            elif mc["is_current"]:
-                p = result.prediction
-            else:
-                p = max(0.1, pred_m * (1 + np.random.normal(0, mc["noise"])) * cf_disp)
-            compare_preds.append(p)
-
-        colors = ["#f59e0b" if mc["is_current"] else mc["color"] for mc in model_compare]
-        border_widths = [3 if mc["is_current"] else 0 for mc in model_compare]
-
-        fig_cmp = go.Figure(go.Bar(
-            x=[mc["name"] for mc in model_compare],
-            y=compare_preds,
-            marker_color=colors,
-            marker_line_color=["white" if mc["is_current"] else "rgba(0,0,0,0)" for mc in model_compare],
-            marker_line_width=border_widths,
-            text=[f"{p:.1f}" for p in compare_preds],
-            textposition="outside",
-        ))
-        fig_cmp.add_hline(y=result.prediction, line_dash="dot", line_color="white",
-                          annotation_text=f"Your model ({result.prediction:.1f} {unit_pref})",
-                          annotation_font_color="white")
-        fig_cmp.update_layout(
-            height=340,
-            yaxis_title=f"Predicted Consumption ({unit_pref})",
-            yaxis=dict(range=[0, max(compare_preds) * 1.2]),
-            showlegend=False,
-            paper_bgcolor="#0f172a",
-            plot_bgcolor="#0a0f1e",
-            font=dict(color="#94a3b8"),
-        )
-        st.plotly_chart(fig_cmp, use_container_width=True)
-        st.caption("⭐ Highlighted bar = model you selected. Values shown are illustrative — use Single Prediction for each model's exact result.")
-
+            # ── Explicit download button ─────────────────────────────────────
+            csv_export = pd.DataFrame(breakdown).to_csv(index=False)
+            st.download_button(
+                label="📥 Download Prediction as CSV",
+                data=csv_export,
+                file_name=f"prediction_{order_input.order_id}_{result.timestamp.strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                help="Download the full prediction breakdown as a CSV file",
+            )
 
 class BatchPredictionPage:
     """Batch prediction page renderer"""
@@ -1779,7 +1945,9 @@ class BatchPredictionPage:
         st.markdown(f"### Upload CSV for multiple predictions | Output: **{unit_pref.upper()}**")
 
         # Template download
-        BatchPredictionPage._render_template_download()
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            BatchPredictionPage._render_template_download()
 
         # File upload
         uploaded_file = st.file_uploader(
@@ -1826,8 +1994,9 @@ class BatchPredictionPage:
             # Validate required columns
             required_columns = [
                 'Order_ID', 'Order_Quantity', 'Garment_Type', 'Fabric_Type',
-                'Fabric_Width_inches', 'Pattern_Complexity', 'Marker_Efficiency_%',
-                'Expected_Defect_Rate_%', 'Operator_Experience_Years'
+                'Fabric_Width_inches', 'Pattern_Complexity', 'Season',
+                'Marker_Efficiency_%', 'Expected_Defect_Rate_%',
+                'Operator_Experience_Years',
             ]
             InputValidator.validate_csv_columns(df, required_columns)
 
@@ -1866,75 +2035,53 @@ class BatchPredictionPage:
         unit_pref: str,
         show_dual_units: bool,
         model_choice: str,
-        model_mgr: ModelManager
+        model_mgr: "ModelManager",
     ) -> None:
-        """Generate predictions for batch data using the selected ML model"""
+        """Generate predictions using the selected ML model for every row."""
         with st.spinner('🔄 Processing...'):
             try:
-                model_name = EncodingMaps.MODEL_DISPLAY[model_choice]
+                model_name = EncodingMaps.MODEL_DISPLAY.get(model_choice, 'ensemble')
+
+                # BOM baseline (for comparison column)
+                garment_bases = df['Garment_Type'].map(
+                    AppConfig.GARMENT_BASE_CONSUMPTION_M
+                ).fillna(1.5)
+                df['Traditional_BOM_m'] = (
+                    df['Order_Quantity'] * garment_bases * AppConfig.DEFAULT_BOM_BUFFER
+                )
+
+                # ── Real ML predictions row-by-row ───────────────────────────
                 predicted_m_list = []
-
-                progress_bar = st.progress(0)
-                total = len(df)
-
-                # Get encoders once
-                encoders = model_mgr.models.get('encoders')
-
-                for row_num, (idx, row) in enumerate(df.iterrows()):
-                    # Convert fabric width: CSV uses inches, model needs cm
-                    fabric_width_cm = UnitConverter.inches_to_cm(
-                        float(row.get('Fabric_Width_inches', 59))
-                    )
-
-                    # Encode categoricals
-                    garment_type = str(row.get('Garment_Type', 'T-Shirt'))
-                    fabric_type = str(row.get('Fabric_Type', 'Cotton'))
-                    pattern_complexity = str(row.get('Pattern_Complexity', 'Simple'))
-
-                    if encoders and isinstance(encoders, dict):
-                        try:
-                            garment_enc = int(encoders['garment_type'].transform([garment_type])[0])
-                            fabric_enc  = int(encoders['fabric_type'].transform([fabric_type])[0])
-                            complex_enc = int(encoders['pattern_complexity'].transform([pattern_complexity])[0])
-                        except Exception:
-                            garment_enc = EncodingMaps.GARMENT_TYPE.get(garment_type, 0)
-                            fabric_enc  = EncodingMaps.FABRIC_TYPE.get(fabric_type, 0)
-                            complex_enc = EncodingMaps.COMPLEXITY.get(pattern_complexity, 2)
-                    else:
-                        garment_enc = EncodingMaps.GARMENT_TYPE.get(garment_type, 0)
-                        fabric_enc  = EncodingMaps.FABRIC_TYPE.get(fabric_type, 0)
-                        complex_enc = EncodingMaps.COMPLEXITY.get(pattern_complexity, 2)
-
-                    order_data = {
-                        'order_quantity': int(row.get('Order_Quantity', 1000)),
-                        'fabric_width_cm': fabric_width_cm,
-                        'marker_efficiency': float(row.get('Marker_Efficiency_%', 85.0)),
-                        'defect_rate': float(row.get('Expected_Defect_Rate_%', 2.0)),
-                        'operator_experience': int(row.get('Operator_Experience_Years', 5)),
-                        'garment_type_encoded': garment_enc,
-                        'fabric_type_encoded': fabric_enc,
-                        'pattern_complexity_encoded': complex_enc,
-                    }
-
+                progress = st.progress(0)
+                n = len(df)
+                for i, (_, row) in enumerate(df.iterrows()):
                     try:
+                        garment    = str(row.get('Garment_Type', 'T-Shirt'))
+                        fabric     = str(row.get('Fabric_Type', 'Cotton'))
+                        complexity = str(row.get('Pattern_Complexity', 'Simple'))
+                        season     = str(row.get('Season', 'Spring'))
+                        width_in   = float(row.get('Fabric_Width_inches', 59))
+                        order_data = {
+                            'order_quantity':             int(row['Order_Quantity']),
+                            'fabric_width_cm':            UnitConverter.inches_to_cm(width_in),
+                            'marker_efficiency':          float(row.get('Marker_Efficiency_%', 85)),
+                            'defect_rate':                float(row.get('Expected_Defect_Rate_%', 2)),
+                            'operator_experience':        int(row.get('Operator_Experience_Years', 5)),
+                            'garment_type_encoded':       EncodingMaps.GARMENT_TYPE.get(garment, 4),
+                            'fabric_type_encoded':        EncodingMaps.FABRIC_TYPE.get(fabric, 0),
+                            'pattern_complexity_encoded': EncodingMaps.COMPLEXITY.get(complexity, 2),
+                            'season_encoded':             EncodingMaps.SEASON.get(season, 1),
+                        }
                         result = model_mgr.predict(order_data, model_name, 'meters')
                         predicted_m_list.append(result.prediction)
-                    except Exception as pred_err:
-                        logger.warning(f"Row {idx} prediction failed ({pred_err}), using fallback")
-                        predicted_m_list.append(
-                            order_data['order_quantity'] * AppConfig.DEFAULT_GARMENT_CONSUMPTION_BASE
-                        )
-
-                    progress_bar.progress(min(1.0, (row_num + 1) / total))
-
-                progress_bar.empty()
-
-                df = df.copy()
+                    except Exception:
+                        # Row-level fallback: garment-specific BOM formula
+                        g_base = AppConfig.GARMENT_BASE_CONSUMPTION_M.get(
+                            str(row.get('Garment_Type', 'T-Shirt')), 1.5)
+                        predicted_m_list.append(float(row['Order_Quantity']) * g_base)
+                    progress.progress(int((i + 1) / n * 100))
+                progress.empty()
                 df['Predicted_m'] = predicted_m_list
-                df['Traditional_BOM_m'] = (
-                    df['Order_Quantity'] * AppConfig.DEFAULT_GARMENT_CONSUMPTION_BASE *
-                    AppConfig.DEFAULT_BOM_BUFFER
-                )
 
                 # Convert to yards
                 df['Predicted_yards'] = df['Predicted_m'] * UnitConverter.METERS_TO_YARDS
@@ -1944,18 +2091,22 @@ class BatchPredictionPage:
                 if unit_pref == 'yards':
                     df['Predicted'] = df['Predicted_yards']
                     df['Traditional_BOM'] = df['Traditional_BOM_yards']
-                    fabric_cost = AppConfig.DEFAULT_FABRIC_COST_PER_METER * UnitConverter.METERS_TO_YARDS
+                    df['fabric_cost'] = df['Fabric_Type'].map(
+                        AppConfig.FABRIC_COST_PER_METER
+                    ).fillna(AppConfig.DEFAULT_FABRIC_COST_PER_METER) * UnitConverter.METERS_TO_YARDS
                 else:
                     df['Predicted'] = df['Predicted_m']
                     df['Traditional_BOM'] = df['Traditional_BOM_m']
-                    fabric_cost = AppConfig.DEFAULT_FABRIC_COST_PER_METER
+                    df['fabric_cost'] = df['Fabric_Type'].map(
+                        AppConfig.FABRIC_COST_PER_METER
+                    ).fillna(AppConfig.DEFAULT_FABRIC_COST_PER_METER)
 
                 df['Difference'] = df['Predicted'] - df['Traditional_BOM']
                 df['Difference_%'] = (df['Difference'] / df['Traditional_BOM']) * 100
-                df['Estimated_Cost'] = df['Predicted'] * fabric_cost
-                df['Potential_Savings'] = abs(df['Difference']) * fabric_cost
+                df['Estimated_Cost'] = df['Predicted'] * df['fabric_cost']
+                df['Potential_Savings'] = abs(df['Difference']) * df['fabric_cost']
 
-                UIHelpers.show_success(f"Predictions complete! {total} orders processed using {model_choice}.")
+                UIHelpers.show_success("Predictions complete!")
 
                 BatchPredictionPage._render_batch_results(
                     df, unit_pref, show_dual_units, model_choice
@@ -1978,10 +2129,9 @@ class BatchPredictionPage:
 
         col1, col2, col3, col4 = st.columns(4)
 
-        fabric_cost = (
-            AppConfig.DEFAULT_FABRIC_COST_PER_METER * UnitConverter.METERS_TO_YARDS
-            if unit_pref == 'yards' else AppConfig.DEFAULT_FABRIC_COST_PER_METER
-        )
+        # fabric_cost column already computed per-row in _generate_predictions;
+        # use it directly — no need for a scalar fallback here.
+        fabric_cost = AppConfig.DEFAULT_FABRIC_COST_PER_METER  # kept for display only
 
         with col1:
             st.metric("Total Orders", len(df))
@@ -1996,12 +2146,10 @@ class BatchPredictionPage:
             st.metric("Total Cost", f"${df['Estimated_Cost'].sum():,.2f}")
 
         with col4:
-            total_cost = df['Estimated_Cost'].sum()
-            total_savings = df['Potential_Savings'].sum()
-            savings_pct = (total_savings / total_cost * 100) if total_cost > 0 else 0.0
+            savings_pct = (df['Potential_Savings'].sum() / df['Estimated_Cost'].sum() * 100)
             st.metric(
                 "Potential Savings",
-                f"${total_savings:,.2f}",
+                f"${df['Potential_Savings'].sum():,.2f}",
                 delta=f"{savings_pct:.1f}%"
             )
 
@@ -2037,16 +2185,13 @@ class BatchPredictionPage:
 
         results_display = df[display_cols].copy()
 
-        try:
-            st.dataframe(results_display.style.format({
-                'Predicted_m': '{:.2f}',
-                'Predicted_yards': '{:.2f}',
-                'Predicted': '{:.2f}',
-                'Difference_%': '{:.2f}',
-                'Potential_Savings': '${:.2f}'
-            }), use_container_width=True, height=400)
-        except Exception:
-            st.dataframe(results_display, use_container_width=True, height=400)
+        st.dataframe(results_display.style.format({
+            'Predicted_m': '{:.2f}',
+            'Predicted_yards': '{:.2f}',
+            'Predicted': '{:.2f}',
+            'Difference_%': '{:.2f}',
+            'Potential_Savings': '${:.2f}'
+        }), use_container_width=True, height=400)
 
         # Download options
         BatchPredictionPage._render_download_buttons(df, unit_pref, model_choice, savings_pct)
@@ -2126,1036 +2271,612 @@ TOP 5 ORDERS BY SAVINGS:
 
 class PerformancePage:
     """
-    Full Model Performance Analysis page — 4-tab interactive dashboard.
-    Tabs: Overview | Error Comparison | Radar Chart | Deep Dive
+    Comprehensive Model Performance Analysis page.
+    Reads live metrics from model_metadata.json (populated by train_models.py).
+    Falls back to realistic illustrative values in demo mode.
+    Includes Ensemble as a first-class model alongside XGB, RF, LSTM, LR.
     """
 
-    # ── Shared model catalogue ──────────────────────────────────────────────
-    MODELS = [
-        dict(id="ensemble",  name="Ensemble ⭐",        badge="BEST",
-             color="#f59e0b", rmse=38.9,  mae=27.4, r2=0.987, mape=1.8,  improvement=67.7,
-             pred_time="12ms", train_time="5s",
-             description="Weighted average of all base models. Inherits strengths of each while smoothing individual weaknesses.",
-             strengths=["Highest accuracy", "Most stable", "Handles edge cases"],
-             weaknesses=["Slower inference", "Requires all base models"],
-             when_to_use="✅ Use for ALL production predictions. Combines XGBoost accuracy with LSTM edge-case handling."),
-        dict(id="xgboost",   name="XGBoost",            badge="RECOMMENDED",
-             color="#10b981", rmse=42.3,  mae=30.1, r2=0.982, mape=2.1,  improvement=65.1,
-             pred_time="3ms",  train_time="8s",
-             description="Gradient-boosted trees. Excellent on structured tabular data with non-linear feature interactions.",
-             strengths=["Fast prediction", "Handles outliers", "Feature importance"],
-             weaknesses=["Can overfit small datasets", "Less interpretable"],
-             when_to_use="✅ Best for large datasets (1000+ rows) with typical order sizes. Fast inference for batch jobs."),
-        dict(id="random_forest", name="Random Forest",       badge=None,
-             color="#3b82f6", rmse=45.1,  mae=32.4, r2=0.975, mape=2.4,  improvement=62.6,
-             pred_time="8ms",  train_time="12s",
-             description="Averaging of many decision trees. Robust and interpretable but struggles with small datasets.",
-             strengths=["Resistant to noise", "Good variance", "Easy to understand"],
-             weaknesses=["Needs large datasets", "Pulls toward dataset mean"],
-             when_to_use="✅ Use when interpretability matters. Retrain on 1000+ rows for best results."),
-        dict(id="lstm",      name="LSTM Neural Net",     badge="NEURAL",
-             color="#8b5cf6", rmse=48.2,  mae=35.2, r2=0.970, mape=2.6,  improvement=60.0,
-             pred_time="18ms", train_time="45s",
-             description="Long Short-Term Memory neural network. Learns complex non-linear patterns. Best for small/unusual orders.",
-             strengths=["Non-linear patterns", "Reliable on edge cases", "Good generalisation"],
-             weaknesses=["Slow training", "Requires TensorFlow", "Needs more data for full potential"],
-             when_to_use="✅ Best for unusual inputs: very small orders, rare garment/fabric combos."),
-        dict(id="linear_regression", name="Linear Regression",   badge="BASELINE",
-             color="#ef4444", rmse=95.4,  mae=70.3, r2=0.851, mape=5.8,  improvement=20.8,
-             pred_time="0.5ms",train_time="1s",
-             description="Simple linear model. Fast and interpretable but assumes linearity. Can extrapolate below zero.",
-             strengths=["Fastest training", "Fully interpretable", "No dependencies"],
-             weaknesses=["Assumes linearity", "Extrapolates poorly", "Lowest ML accuracy"],
-             when_to_use="⚠️ Use only as sanity-check baseline. Avoid for production on small orders."),
-        dict(id="bom",       name="Traditional BOM",     badge="LEGACY",
-             color="#6b7280", rmse=120.5, mae=90.2, r2=0.753, mape=8.5,  improvement=0,
-             pred_time="0.1ms",train_time="N/A",
-             description="Rule-based formula: Qty × 1.5m × 1.05 buffer. No learning. Ignores garment type, efficiency, defect rate.",
-             strengths=["Fully transparent", "No training needed", "Industry standard"],
-             weaknesses=["Ignores real inputs", "Worst accuracy", "Fixed assumptions"],
-             when_to_use="❌ Avoid for accurate planning. Use only when no model is available."),
-    ]
+    # ── Fallback metrics (used in demo mode when metadata not yet loaded) ─────
+    # Order: Ensemble, XGBoost, Random Forest, LSTM, Linear Regression, Trad BOM
+    DEMO_MODELS = ["Ensemble", "XGBoost", "Random Forest", "LSTM",
+                   "Linear Regression", "Traditional BOM"]
+    DEMO_RMSE   = [28.4,  35.1,  38.6,  42.2,  88.7,  120.5]
+    DEMO_MAE    = [20.1,  25.3,  27.8,  30.4,  65.1,   90.2]
+    DEMO_R2     = [0.987, 0.982, 0.975, 0.970,  0.851,   0.753]
+    DEMO_MAPE   = [1.9,   2.3,   2.7,   3.1,    6.2,     8.5]
+    DEMO_COLORS = ["#8B5CF6","#3B82F6","#10B981","#F59E0B","#EF4444","#6B7280"]
 
-    DARK = "rgba(0,0,0,0)"
-    GRID = dict(gridcolor="#1e293b", zerolinecolor="#1e293b")
-    PLOT_BG = dict(
-        paper_bgcolor="#0f172a",
-        plot_bgcolor="#0a0f1e",
-        font=dict(color="#94a3b8", family="monospace"),
-    )
+    # Feature display names (fallback if not in metadata)
+    FEATURE_LABELS = {
+        "order_quantity":             "Order Quantity",
+        "fabric_width_cm":            "Fabric Width",
+        "marker_efficiency":          "Marker Efficiency",
+        "defect_rate":                "Defect Rate",
+        "operator_experience":        "Operator Experience",
+        "garment_type_encoded":       "Garment Type",
+        "fabric_type_encoded":        "Fabric Type",
+        "pattern_complexity_encoded": "Pattern Complexity",
+        "season_encoded":             "Season",
+    }
 
     @staticmethod
-    def render(unit_pref: str) -> None:
-        """Render the full 4-tab performance analysis page"""
-        cf = 1 if unit_pref == "meters" else UnitConverter.METERS_TO_YARDS
-        models = PerformancePage.MODELS
-
+    def render(unit_pref: str, model_mgr: "ModelManager") -> None:
+        """Main entry point — renders full performance analysis."""
         st.title("📈 Model Performance Analysis")
         st.markdown(
-            f"Complete evaluation of **4 ML models + Ensemble** vs Traditional BOM · "
-            f"Metrics in **{unit_pref.upper()}**"
+            f"### Comparing all 5 ML models + Traditional BOM baseline | "
+            f"**{unit_pref.upper()}**"
         )
 
-        # ── Top KPI strip ───────────────────────────────────────────────────
-        k1, k2, k3, k4, k5 = st.columns(5)
-        kpis = [
-            ("🥇 Best R²",        "0.987",   "Ensemble"),
-            ("📐 Best RMSE",      f"{38.9*cf:.1f} {unit_pref}", "Ensemble"),
-            ("📉 Best MAPE",      "1.8%",    "Ensemble"),
-            ("📈 vs BOM",         "+67.7%",  "Improvement"),
-            ("🤖 Models Active",  "4+Ensemble", "XGB/RF/LSTM/LR"),
-        ]
-        for col, (label, val, sub) in zip([k1, k2, k3, k4, k5], kpis):
-            with col:
-                st.metric(label=label, value=val, delta=sub)
+        # ── Load metrics ────────────────────────────────────────────────────
+        metrics_df, ensemble_weights, feature_importance, cv_data, bom_data,             is_live = PerformancePage._load_metrics(model_mgr, unit_pref)
+
+        # ── Mode badge ──────────────────────────────────────────────────────
+        if is_live:
+            st.success(
+                "✅ **Live metrics** — loaded from trained model_metadata.json. "
+                "All numbers reflect actual test-set performance."
+            )
+        else:
+            st.info(
+                "ℹ️ **Demo mode** — illustrative metrics shown. "
+                "Run `python train_models.py` then reload to see live results."
+            )
 
         st.markdown("---")
 
-        # ── 5 Tabs ──────────────────────────────────────────────────────────
+        # ── Tabs ────────────────────────────────────────────────────────────
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "📊 Overview",
-            "📈 Error Comparison",
-            "🕸 Radar Chart",
-            "🔍 Deep Dive",
-            "⭐ Ensemble Analysis",
+            "🏆 Overview",
+            "📊 Error Analysis",
+            "🎯 Accuracy Deep-Dive",
+            "🌲 Feature Importance",
+            "⚙️ Ensemble Details",
         ])
 
         with tab1:
             try:
-                PerformancePage._tab_overview(models, unit_pref, cf)
+                PerformancePage._tab_overview(metrics_df, unit_pref, is_live)
             except Exception as e:
-                st.error(f"❌ Overview tab error: {e}")
-                if AppConfig.DEBUG:
-                    st.code(traceback.format_exc())
+                st.error(f"Overview tab error: {e}")
+
         with tab2:
             try:
-                PerformancePage._tab_errors(models, unit_pref, cf)
+                PerformancePage._tab_error_analysis(metrics_df, unit_pref)
             except Exception as e:
-                st.error(f"❌ Error Comparison tab error: {e}")
-                if AppConfig.DEBUG:
-                    st.code(traceback.format_exc())
+                st.error(f"Error analysis tab error: {e}")
+
         with tab3:
             try:
-                PerformancePage._tab_radar(models)
+                PerformancePage._tab_accuracy(metrics_df, cv_data)
             except Exception as e:
-                st.error(f"❌ Radar Chart tab error: {e}")
-                if AppConfig.DEBUG:
-                    st.code(traceback.format_exc())
+                st.error(f"Accuracy tab error: {e}")
+
         with tab4:
             try:
-                PerformancePage._tab_deep_dive(models, unit_pref, cf)
+                PerformancePage._tab_feature_importance(feature_importance)
             except Exception as e:
-                st.error(f"❌ Deep Dive tab error: {e}")
-                if AppConfig.DEBUG:
-                    st.code(traceback.format_exc())
+                st.error(f"Feature importance tab error: {e}")
+
         with tab5:
             try:
-                PerformancePage._tab_ensemble(models, unit_pref, cf)
+                PerformancePage._tab_ensemble(ensemble_weights, metrics_df)
             except Exception as e:
-                st.error(f"❌ Ensemble Analysis tab error: {e}")
-                if AppConfig.DEBUG:
-                    st.code(traceback.format_exc())
+                st.error(f"Ensemble tab error: {e}")
 
-        PerformancePage._render_conversion_reference(unit_pref)
+    # ── Data loading ─────────────────────────────────────────────────────────
 
-    # ── TAB 1: Overview ─────────────────────────────────────────────────────
     @staticmethod
-    def _tab_overview(models: list, unit_pref: str, cf: float) -> None:
-        """Ranked summary table + score card tiles + improvement chart"""
-        PG = PerformancePage.PLOT_BG
-        GR = PerformancePage.GRID
-
-        st.subheader("🏆 All Models Ranked by Performance")
-        st.caption("Lower RMSE/MAE/MAPE = better accuracy. Higher R² = better fit. Green = best in column.")
-
-        # ── Ranked table with column_config ─────────────────────────────────
-        rmse_col = f"RMSE ({unit_pref})"
-        mae_col  = f"MAE ({unit_pref})"
-        rows = []
-        for i, m in enumerate(models):
-            rows.append({
-                "Rank": f"#{i+1}",
-                "Model": m["name"],
-                "Status": m["badge"] or "—",
-                rmse_col:  round(m["rmse"] * cf, 1),
-                mae_col:   round(m["mae"]  * cf, 1),
-                "R² Score": m["r2"],
-                "MAPE %":   m["mape"],
-                "vs BOM":   f"+{m['improvement']}%" if m["improvement"] else "—",
-                "Speed":    m["pred_time"],
-            })
-        df = pd.DataFrame(rows)
+    def _load_metrics(model_mgr, unit_pref):
+        """
+        Pull metrics from model_metadata.json if available.
+        Returns (metrics_df, ensemble_weights, feature_importance, cv_data, bom_data, is_live).
+        """
+        cf = 1.0 if unit_pref == "meters" else UnitConverter.METERS_TO_YARDS
+        is_live = False
+        ensemble_weights = {}
+        feature_importance = {}
+        cv_data = {}
+        bom_data = {}
 
         try:
-            styled = (
-                df.style
-                .highlight_min(subset=[rmse_col, mae_col, "MAPE %"], color="#064e3b", props="color: #6ee7b7; font-weight:bold;")
-                .highlight_max(subset=["R² Score"],                    color="#064e3b", props="color: #6ee7b7; font-weight:bold;")
-                .set_properties(**{"text-align": "center"})
-                .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
-            )
-            st.dataframe(styled, use_container_width=True, height=275)
+            meta = (model_mgr.models.get("metadata") or {})
+            models_meta = meta.get("models", {})
+
+            if (models_meta
+                    and meta.get("version", "").startswith("3")
+                    and meta.get("mode", "production") != "demo"):
+                is_live = True
+                rows = []
+                display_map = {
+                    "ensemble":          "Ensemble",
+                    "xgboost":           "XGBoost",
+                    "random_forest":     "Random Forest",
+                    "lstm":              "LSTM",
+                    "linear_regression": "Linear Regression",
+                }
+                color_map = {
+                    "Ensemble": "#8B5CF6", "XGBoost": "#3B82F6",
+                    "Random Forest": "#10B981", "LSTM": "#F59E0B",
+                    "Linear Regression": "#EF4444",
+                }
+                for key, label in display_map.items():
+                    m = models_meta.get(key)
+                    if not m:
+                        continue
+                    rows.append({
+                        "Model":  label,
+                        "RMSE":   round(m["rmse"] * cf, 2),
+                        "MAE":    round(m["mae"]  * cf, 2),
+                        "R2":     m["r2"],
+                        "MAPE":   m["mape"],
+                        "Color":  color_map.get(label, "#6B7280"),
+                    })
+                    if key == "ensemble":
+                        ensemble_weights = m.get("weights", {})
+                    if "feature_importance" in m:
+                        feature_importance[label] = m["feature_importance"]
+                    if "cross_validation" in m:
+                        cv_data[label] = m["cross_validation"]
+
+                bom = meta.get("bom_baseline") or models_meta.get("trad_bom") or {}
+                bom_data = bom
+                if bom and bom.get("rmse"):
+                    rows.append({
+                        "Model":  "Traditional BOM",
+                        "RMSE":   round(bom["rmse"] * cf, 2),
+                        "MAE":    round(bom.get("mae", bom["rmse"] * 0.75) * cf, 2),
+                        "R2":     bom.get("r2", 0.75),
+                        "MAPE":   bom.get("mape", 8.5),
+                        "Color":  "#6B7280",
+                    })
+
+                if rows:
+                    return (pd.DataFrame(rows), ensemble_weights,
+                            feature_importance, cv_data, bom_data, is_live)
+
+        except Exception as _e:
+            logger.debug(f"Metadata parse error: {_e}")
+
+        # ── Fallback demo data ────────────────────────────────────────────────
+        rows = []
+        for i, model in enumerate(PerformancePage.DEMO_MODELS):
+            rows.append({
+                "Model":  model,
+                "RMSE":   round(PerformancePage.DEMO_RMSE[i] * cf, 2),
+                "MAE":    round(PerformancePage.DEMO_MAE[i]  * cf, 2),
+                "R2":     PerformancePage.DEMO_R2[i],
+                "MAPE":   PerformancePage.DEMO_MAPE[i],
+                "Color":  PerformancePage.DEMO_COLORS[i],
+            })
+        return (pd.DataFrame(rows),
+                {"xgboost": 0.43, "random_forest": 0.30,
+                 "lstm": 0.17, "linear_regression": 0.10},
+                {}, {}, {}, False)
+
+    # ── Tab 1: Overview ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _tab_overview(df, unit_pref, is_live):
+        st.subheader("🏆 All Models at a Glance")
+
+        ens = df[df["Model"] == "Ensemble"]
+        bom = df[df["Model"] == "Traditional BOM"]
+
+        if not ens.empty and not bom.empty:
+            col1, col2, col3, col4 = st.columns(4)
+            er  = ens.iloc[0]
+            br  = bom.iloc[0]
+            rmse_imp = round((br["RMSE"] - er["RMSE"]) / br["RMSE"] * 100, 1)
+            mape_imp = round((br["MAPE"] - er["MAPE"]) / br["MAPE"] * 100, 1)
+
+            with col1:
+                st.metric("🥇 Ensemble R²",  f"{er['R2']:.4f}",
+                          delta=f"+{er['R2'] - br['R2']:.4f} vs BOM")
+            with col2:
+                st.metric("🎯 Ensemble MAPE", f"{er['MAPE']:.2f}%",
+                          delta=f"{-mape_imp:.1f}% vs BOM", delta_color="inverse")
+            with col3:
+                st.metric(f"📐 Ensemble RMSE ({unit_pref})", f"{er['RMSE']:.1f}",
+                          delta=f"-{rmse_imp:.1f}% vs BOM", delta_color="inverse")
+            with col4:
+                n_ml = len(df[df["Model"] != "Traditional BOM"])
+                st.metric("🤖 Models Compared", str(n_ml), delta="+ BOM baseline")
+
+        st.markdown("---")
+        st.subheader("📋 Complete Metric Table")
+        display_df = df[["Model","RMSE","MAE","R2","MAPE"]].copy()
+        display_df.columns = ["Model", f"RMSE ({unit_pref})", f"MAE ({unit_pref})",
+                               "R² Score", "MAPE %"]
+        try:
+            styled = (display_df.style
+                .highlight_max(subset=["R² Score"], color="#c6efce")
+                .highlight_min(
+                    subset=[f"RMSE ({unit_pref})", f"MAE ({unit_pref})", "MAPE %"],
+                    color="#c6efce")
+                .format({f"RMSE ({unit_pref})": "{:.2f}",
+                         f"MAE ({unit_pref})":  "{:.2f}",
+                         "R² Score": "{:.4f}",
+                         "MAPE %":   "{:.2f}%"}))
+            st.dataframe(styled, use_container_width=True, height=310)
         except Exception:
-            st.dataframe(df, use_container_width=True, height=275)
+            st.dataframe(display_df, use_container_width=True, height=310)
 
         st.markdown("---")
+        st.subheader("🕸️ Multi-Metric Radar Chart")
+        PerformancePage._render_radar(df)
 
-        # ── Score cards for top 4 ML models ─────────────────────────────────
-        st.subheader("📋 Model Score Cards")
-        ml_models = [m for m in models if m["id"] not in ("bom",)]
-        card_cols = st.columns(len(ml_models))
-        for col, m in zip(card_cols, ml_models):
-            with col:
-                badge_html = (
-                    f"<span style='background:{m['color']};color:#0f172a;"
-                    f"padding:2px 8px;border-radius:12px;font-size:11px;"
-                    f"font-weight:700;'>{m['badge']}</span><br>"
-                    if m["badge"] else "<br>"
-                )
-                st.markdown(
-                    f"<div style='border:1px solid {m['color']};border-radius:10px;"
-                    f"padding:12px 10px;text-align:center;background:#0f172a;'>"
-                    f"{badge_html}"
-                    f"<span style='color:{m['color']};font-size:15px;font-weight:700;'>{m['name']}</span><br>"
-                    f"<span style='color:#94a3b8;font-size:11px;'>R² </span>"
-                    f"<span style='color:#e2e8f0;font-weight:700;'>{m['r2']:.3f}</span>&nbsp;"
-                    f"<span style='color:#94a3b8;font-size:11px;'>MAPE </span>"
-                    f"<span style='color:#e2e8f0;font-weight:700;'>{m['mape']}%</span><br>"
-                    f"<span style='color:#94a3b8;font-size:11px;'>{m['pred_time']} inference</span>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
+    @staticmethod
+    def _render_radar(df):
+        ml_df = df[df["Model"] != "Traditional BOM"].copy()
+        if ml_df.empty:
+            return
+        metrics = ["R2", "MAPE", "RMSE", "MAE"]
+        norm = ml_df[["Model"] + metrics].copy()
+        for col in ["MAPE", "RMSE", "MAE"]:
+            mn, mx = norm[col].min(), norm[col].max()
+            norm[col] = 1.0 - (norm[col] - mn) / (mx - mn) if mx > mn else 1.0
+        mn, mx = norm["R2"].min(), norm["R2"].max()
+        norm["R2"] = (norm["R2"] - mn) / (mx - mn) if mx > mn else 1.0
 
-        st.markdown("---")
-
-        # ── Improvement vs BOM horizontal chart ──────────────────────────────
-        st.subheader("📈 Accuracy Improvement vs Traditional BOM")
-        st.caption("How much better each ML model is compared to the rule-based BOM formula.")
-        imp_models = [m for m in models if m["improvement"] > 0]
-
-        fig = go.Figure(go.Bar(
-            x=[m["improvement"] for m in imp_models],
-            y=[m["name"] for m in imp_models],
-            orientation="h",
-            marker=dict(
-                color=[m["improvement"] for m in imp_models],
-                colorscale=[[0, "#3b82f6"], [0.5, "#10b981"], [1, "#f59e0b"]],
-                showscale=False,
-                line=dict(color="#1e293b", width=1),
-            ),
-            text=[f'+{m["improvement"]}%' for m in imp_models],
-            textposition="outside",
-            textfont=dict(color="#e2e8f0", size=13),
-        ))
+        categories = ["R²", "Low MAPE", "Low RMSE", "Low MAE"]
+        color_map = dict(zip(ml_df["Model"], ml_df["Color"]))
+        fig = go.Figure()
+        for _, row in norm.iterrows():
+            vals = [row["R2"], row["MAPE"], row["RMSE"], row["MAE"]]
+            vals += [vals[0]]
+            cats  = categories + [categories[0]]
+            fig.add_trace(go.Scatterpolar(
+                r=vals, theta=cats, fill="toself",
+                name=row["Model"],
+                line=dict(color=color_map.get(row["Model"], "#888"), width=2),
+                opacity=0.75,
+            ))
         fig.update_layout(
-            height=320,
-            xaxis=dict(title="Improvement over Traditional BOM (%)", range=[0, 80], **GR),
-            yaxis=dict(**GR),
-            showlegend=False,
-            **PG,
+            polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+            height=440, legend=dict(orientation="h", y=-0.15),
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        # ── Mini accuracy gauge row ───────────────────────────────────────────
-        st.markdown("---")
-        st.subheader("🎯 Key Takeaway")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.success("🥇 **Best accuracy:** Ensemble (R² 0.987, MAPE 1.8%)")
-        with c2:
-            st.info("⚡ **Fastest inference:** Traditional BOM (0.1ms), XGBoost (3ms) for ML")
-        with c3:
-            st.warning("⚠️ **Avoid for production:** Traditional BOM (MAPE 8.5%, no learning)")
+    # ── Tab 2: Error Analysis ─────────────────────────────────────────────────
 
-    # ── TAB 2: Error Comparison ──────────────────────────────────────────────
     @staticmethod
-    def _tab_errors(models: list, unit_pref: str, cf: float) -> None:
-        """Rich error metric comparison with annotations and scatter"""
-        PG = PerformancePage.PLOT_BG
-        GR = PerformancePage.GRID
+    def _tab_error_analysis(df, unit_pref):
+        st.subheader(f"📊 Error Metrics Breakdown ({unit_pref})")
 
-        names  = [m["name"]      for m in models]
-        colors = [m["color"]     for m in models]
-        rmses  = [m["rmse"] * cf for m in models]
-        maes   = [m["mae"]  * cf for m in models]
-        r2s    = [m["r2"]        for m in models]
-        mapes  = [m["mape"]      for m in models]
+        col1, col2 = st.columns(2)
+        with col1:
+            fig = go.Figure([
+                go.Bar(x=[r["Model"]], y=[r["RMSE"]],
+                       marker_color=r["Color"], showlegend=False)
+                for _, r in df.iterrows()
+            ])
+            fig.update_layout(title=f"RMSE by Model ({unit_pref})",
+                              yaxis_title=f"RMSE ({unit_pref})",
+                              height=380, bargap=0.3)
+            st.plotly_chart(fig, use_container_width=True)
 
-        # ── Row 1: RMSE + MAE ─────────────────────────────────────────────
+        with col2:
+            fig = go.Figure([
+                go.Bar(x=[r["Model"]], y=[r["MAE"]],
+                       marker_color=r["Color"], showlegend=False)
+                for _, r in df.iterrows()
+            ])
+            fig.update_layout(title=f"MAE by Model ({unit_pref})",
+                              yaxis_title=f"MAE ({unit_pref})",
+                              height=380, bargap=0.3)
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("📉 MAPE Comparison (lower is better)")
+        fig = go.Figure([
+            go.Bar(x=[r["Model"]], y=[r["MAPE"]],
+                   marker_color=r["Color"],
+                   text=f"{r['MAPE']:.2f}%",
+                   textposition="outside",
+                   showlegend=False)
+            for _, r in df.iterrows()
+        ])
+        fig.add_hline(y=5.0, line_dash="dash", line_color="orange",
+                      annotation_text="5% threshold")
+        fig.add_hline(y=2.5, line_dash="dot", line_color="green",
+                      annotation_text="Excellent (<2.5%)")
+        fig.update_layout(height=420, yaxis_title="MAPE (%)", bargap=0.3)
+        st.plotly_chart(fig, use_container_width=True)
+
+        bom_row = df[df["Model"] == "Traditional BOM"]
+        if not bom_row.empty:
+            st.markdown("---")
+            st.subheader("📈 Improvement Over Traditional BOM")
+            bom_rmse = bom_row.iloc[0]["RMSE"]
+            bom_mape = bom_row.iloc[0]["MAPE"]
+            imp_df = df[df["Model"] != "Traditional BOM"].copy()
+            imp_df["RMSE Imp %"] = ((bom_rmse - imp_df["RMSE"]) / bom_rmse * 100).round(1)
+            imp_df["MAPE Imp %"] = ((bom_mape - imp_df["MAPE"]) / bom_mape * 100).round(1)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                fig = go.Figure([
+                    go.Bar(x=[r["Model"]], y=[r["RMSE Imp %"]],
+                           marker_color=r["Color"],
+                           text=f"{r['RMSE Imp %']:.1f}%",
+                           textposition="outside", showlegend=False)
+                    for _, r in imp_df.iterrows()
+                ])
+                fig.update_layout(title="RMSE Reduction vs BOM (%)",
+                                  height=360, bargap=0.3,
+                                  yaxis_title="Improvement %")
+                st.plotly_chart(fig, use_container_width=True)
+            with col2:
+                fig = go.Figure([
+                    go.Bar(x=[r["Model"]], y=[r["MAPE Imp %"]],
+                           marker_color=r["Color"],
+                           text=f"{r['MAPE Imp %']:.1f}%",
+                           textposition="outside", showlegend=False)
+                    for _, r in imp_df.iterrows()
+                ])
+                fig.update_layout(title="MAPE Reduction vs BOM (%)",
+                                  height=360, bargap=0.3,
+                                  yaxis_title="Improvement %")
+                st.plotly_chart(fig, use_container_width=True)
+
+    # ── Tab 3: Accuracy Deep-Dive ─────────────────────────────────────────────
+
+    @staticmethod
+    def _tab_accuracy(df, cv_data):
+        st.subheader("🎯 R² Score Analysis")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            fig = go.Figure([
+                go.Bar(x=[r["Model"]], y=[r["R2"]],
+                       marker_color=r["Color"],
+                       text=f"{r['R2']:.4f}",
+                       textposition="outside",
+                       showlegend=False)
+                for _, r in df.iterrows()
+            ])
+            fig.add_hline(y=0.95, line_dash="dash", line_color="green",
+                          annotation_text="Excellent (>0.95)")
+            fig.add_hline(y=0.90, line_dash="dot", line_color="orange",
+                          annotation_text="Good (>0.90)")
+            fig.update_layout(title="R² Score by Model", height=420,
+                              yaxis=dict(range=[0.65, 1.02]),
+                              yaxis_title="R²", bargap=0.3)
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col2:
+            bom_r2_vals = df[df["Model"] == "Traditional BOM"]["R2"].values
+            bom_val = float(bom_r2_vals[0]) if len(bom_r2_vals) else 0.75
+            ml_only = df[df["Model"] != "Traditional BOM"]
+            fig = go.Figure([
+                go.Bar(y=[r["Model"]], x=[r["R2"]],
+                       orientation="h",
+                       marker_color=r["Color"],
+                       text=f"{r['R2']:.4f}",
+                       textposition="outside",
+                       showlegend=False)
+                for _, r in ml_only.iterrows()
+            ])
+            fig.add_vline(x=bom_val, line_dash="dash", line_color="#6B7280",
+                          annotation_text=f"BOM R²={bom_val:.3f}")
+            fig.update_layout(title="ML Models vs BOM Baseline",
+                              xaxis=dict(range=[0.70, 1.01], title="R² Score"),
+                              height=420)
+            st.plotly_chart(fig, use_container_width=True)
+
+        if cv_data:
+            st.markdown("---")
+            st.subheader("🔄 5-Fold Cross-Validation Results")
+            st.caption("Mean ± Std across 5 folds — more reliable than single split.")
+            cv_rows = [
+                {"Model": m,
+                 "CV RMSE":   f"{d.get('rmse_mean',0):.2f} ± {d.get('rmse_std',0):.2f}",
+                 "CV R²":     f"{d.get('r2_mean',0):.4f} ± {d.get('r2_std',0):.4f}",
+                 "CV MAPE %": f"{d.get('mape_mean',0):.2f}% ± {d.get('mape_std',0):.2f}%"}
+                for m, d in cv_data.items()
+            ]
+            st.dataframe(pd.DataFrame(cv_rows), use_container_width=True)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                fig = go.Figure([
+                    go.Bar(x=[m], y=[d.get("r2_mean",0)],
+                           error_y=dict(type="data",
+                                        array=[d.get("r2_std",0)],
+                                        visible=True),
+                           name=m)
+                    for m, d in cv_data.items()
+                ])
+                fig.update_layout(title="CV R² (mean ± std)", height=360,
+                                  showlegend=False, yaxis_title="R²")
+                st.plotly_chart(fig, use_container_width=True)
+            with col2:
+                fig = go.Figure([
+                    go.Bar(x=[m], y=[d.get("mape_mean",0)],
+                           error_y=dict(type="data",
+                                        array=[d.get("mape_std",0)],
+                                        visible=True),
+                           name=m)
+                    for m, d in cv_data.items()
+                ])
+                fig.update_layout(title="CV MAPE % (mean ± std)", height=360,
+                                  showlegend=False, yaxis_title="MAPE %")
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info(
+                "💡 Cross-validation data not available. "
+                "Retrain with `train_models.py v3.0` to see 5-fold CV scores here."
+            )
+
+    # ── Tab 4: Feature Importance ─────────────────────────────────────────────
+
+    @staticmethod
+    def _tab_feature_importance(feature_importance):
+        st.subheader("🌲 Feature Importance Analysis")
+
+        if not feature_importance:
+            st.info(
+                "Feature importance data not available. "
+                "After training with `train_models.py v3.0`, XGBoost and "
+                "Random Forest importances appear here automatically."
+            )
+            st.markdown("---")
+            st.caption("Illustrative demo values (approximate typical importance):")
+            demo_fi = {
+                "order_quantity": 0.31, "garment_type_encoded": 0.24,
+                "fabric_width_cm": 0.14, "pattern_complexity_encoded": 0.10,
+                "marker_efficiency": 0.09, "defect_rate": 0.06,
+                "operator_experience": 0.04, "fabric_type_encoded": 0.01,
+                "season_encoded": 0.01,
+            }
+            PerformancePage._render_importance_chart(demo_fi, "XGBoost (illustrative)")
+            return
+
+        model_options = list(feature_importance.keys())
+        selected = st.selectbox("Model", model_options, key="fi_select")
+        fi_dict  = feature_importance.get(selected, {})
+        if fi_dict:
+            PerformancePage._render_importance_chart(fi_dict, selected)
+
+        if len(feature_importance) >= 2:
+            st.markdown("---")
+            st.subheader("Side-by-Side Comparison")
+            cols = st.columns(len(feature_importance))
+            for col, (mname, fi) in zip(cols, feature_importance.items()):
+                with col:
+                    labels = PerformancePage.FEATURE_LABELS
+                    fi_clean = {labels.get(k, k): v for k, v in fi.items()}
+                    fi_sorted = dict(sorted(fi_clean.items(),
+                                           key=lambda x: x[1], reverse=True))
+                    st.caption(f"**{mname}**")
+                    for feat, imp in fi_sorted.items():
+                        st.progress(float(imp), text=f"{feat}: {imp:.3f}")
+
+    @staticmethod
+    def _render_importance_chart(fi_dict, model_name):
+        labels = PerformancePage.FEATURE_LABELS
+        fi_clean = {labels.get(k, k): v for k, v in fi_dict.items()}
+        fi_sorted = dict(sorted(fi_clean.items(), key=lambda x: x[1], reverse=True))
+
+        col1, col2 = st.columns([3, 2])
+        with col1:
+            fig = go.Figure(go.Bar(
+                x=list(fi_sorted.values()),
+                y=list(fi_sorted.keys()),
+                orientation="h",
+                marker=dict(color=list(fi_sorted.values()),
+                            colorscale="Viridis", showscale=True,
+                            colorbar=dict(title="Importance")),
+            ))
+            fig.update_layout(
+                title=f"{model_name} — Feature Importance",
+                xaxis_title="Importance Score",
+                height=400,
+                yaxis=dict(autorange="reversed"),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col2:
+            fig2 = go.Figure(go.Pie(
+                labels=list(fi_sorted.keys()),
+                values=list(fi_sorted.values()),
+                hole=0.45,
+                textinfo="label+percent",
+            ))
+            fig2.update_layout(title="Share", height=400,
+                               legend=dict(font=dict(size=10)))
+            st.plotly_chart(fig2, use_container_width=True)
+
+    # ── Tab 5: Ensemble Details ───────────────────────────────────────────────
+
+    @staticmethod
+    def _tab_ensemble(ensemble_weights, metrics_df):
+        st.subheader("⚙️ Ensemble Model Architecture")
+        st.markdown(
+            "The **Weighted-Average Ensemble** combines predictions from XGBoost, "
+            "Random Forest, LSTM, and Linear Regression. Weights are proportional "
+            "to each model's **validation R²**, computed automatically during training."
+        )
+
+        if not ensemble_weights:
+            st.info("Ensemble weights not available. Train with `train_models.py v3.0`.")
+            ensemble_weights = {"XGBoost": 0.43, "Random Forest": 0.30,
+                                "LSTM": 0.17, "Linear Regression": 0.10}
+
+        key_map = {"xgboost": "XGBoost", "random_forest": "Random Forest",
+                   "lstm": "LSTM", "linear_regression": "Linear Regression"}
+        disp_w = {key_map.get(k, k): v for k, v in ensemble_weights.items()}
+
+        ens_row = metrics_df[metrics_df["Model"] == "Ensemble"]
+        if not ens_row.empty:
+            r = ens_row.iloc[0]
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Ensemble R²",   f"{r['R2']:.4f}")
+            c2.metric("Ensemble MAPE", f"{r['MAPE']:.2f}%")
+            c3.metric("Ensemble RMSE", f"{r['RMSE']:.2f}")
+
+        st.markdown("---")
         col1, col2 = st.columns(2)
 
         with col1:
-            st.subheader(f"📐 RMSE ({unit_pref}) — lower is better")
-            st.caption("Penalises large errors more heavily. Best for catching big mispredictions.")
-            fig = go.Figure(go.Bar(
-                x=names, y=rmses,
-                marker=dict(color=rmses, colorscale="RdYlGn_r", showscale=False,
-                            line=dict(color="#1e293b", width=1)),
-                text=[f'{v:.1f}' for v in rmses], textposition="outside",
-                textfont=dict(color="#e2e8f0"),
-            ))
-            # Best model annotation
-            best_rmse_idx = rmses.index(min(rmses))
-            fig.add_annotation(x=names[best_rmse_idx], y=rmses[best_rmse_idx],
-                               text="🥇 Best", showarrow=True, arrowhead=2,
-                               font=dict(color="#10b981", size=12), ay=-40)
-            fig.update_layout(height=350, yaxis=dict(title=f"RMSE ({unit_pref})", **GR),
-                              xaxis=dict(**GR), showlegend=False, **PG)
-            st.plotly_chart(fig, use_container_width=True)
-
-        with col2:
-            st.subheader(f"📏 MAE ({unit_pref}) — lower is better")
-            st.caption("Average absolute error per order. More interpretable than RMSE.")
-            fig = go.Figure(go.Bar(
-                x=names, y=maes,
-                marker=dict(color=maes, colorscale="RdYlGn_r", showscale=False,
-                            line=dict(color="#1e293b", width=1)),
-                text=[f'{v:.1f}' for v in maes], textposition="outside",
-                textfont=dict(color="#e2e8f0"),
-            ))
-            best_mae_idx = maes.index(min(maes))
-            fig.add_annotation(x=names[best_mae_idx], y=maes[best_mae_idx],
-                               text="🥇 Best", showarrow=True, arrowhead=2,
-                               font=dict(color="#10b981", size=12), ay=-40)
-            fig.update_layout(height=350, yaxis=dict(title=f"MAE ({unit_pref})", **GR),
-                              xaxis=dict(**GR), showlegend=False, **PG)
-            st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("---")
-
-        # ── Row 2: R² + MAPE ─────────────────────────────────────────────
-        col3, col4 = st.columns(2)
-
-        with col3:
-            st.subheader("🎯 R² Score — higher is better (max 1.0)")
-            st.caption("Fraction of consumption variance explained. 0.987 = only 1.3% unexplained.")
-            bar_r2_colors = ["#10b981" if v >= 0.95 else "#f59e0b" if v >= 0.85 else "#ef4444" for v in r2s]
-            fig = go.Figure(go.Bar(
-                x=names, y=r2s, marker_color=bar_r2_colors,
-                marker_line=dict(color="#1e293b", width=1),
-                text=[f'{v:.3f}' for v in r2s], textposition="outside",
-                textfont=dict(color="#e2e8f0"),
-            ))
-            fig.add_hline(y=0.95, line_dash="dash", line_color="#f59e0b",
-                          annotation_text="Excellent ≥ 0.95", annotation_font_color="#f59e0b",
-                          annotation_position="top right")
-            fig.add_hline(y=0.90, line_dash="dot", line_color="#94a3b8",
-                          annotation_text="Good ≥ 0.90", annotation_font_color="#94a3b8",
-                          annotation_position="bottom right")
-            fig.update_layout(height=360, yaxis=dict(title="R² Score", range=[0.70, 1.01], **GR),
-                              xaxis=dict(**GR), showlegend=False, **PG)
-            st.plotly_chart(fig, use_container_width=True)
-
-        with col4:
-            st.subheader("📉 MAPE % — lower is better")
-            st.caption("Mean Absolute Percentage Error. How wrong on average as % of actual consumption.")
-            bar_mape_colors = ["#10b981" if v < 3 else "#f59e0b" if v < 6 else "#ef4444" for v in mapes]
-            fig = go.Figure(go.Bar(
-                x=names, y=mapes, marker_color=bar_mape_colors,
-                marker_line=dict(color="#1e293b", width=1),
-                text=[f'{v}%' for v in mapes], textposition="outside",
-                textfont=dict(color="#e2e8f0"),
-            ))
-            fig.add_hline(y=3.0, line_dash="dash", line_color="#10b981",
-                          annotation_text="✅ Good < 3%", annotation_font_color="#10b981",
-                          annotation_position="top right")
-            fig.add_hline(y=6.0, line_dash="dash", line_color="#ef4444",
-                          annotation_text="❌ Poor > 6%", annotation_font_color="#ef4444",
-                          annotation_position="bottom right")
-            fig.update_layout(height=360, yaxis=dict(title="MAPE %", **GR),
-                              xaxis=dict(**GR), showlegend=False, **PG)
-            st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("---")
-
-        # ── Row 3: Grouped RMSE+MAE + Accuracy vs Speed scatter ─────────────
-        col5, col6 = st.columns(2)
-
-        with col5:
-            st.subheader(f"📊 RMSE vs MAE Side-by-Side ({unit_pref})")
-            st.caption("RMSE is always ≥ MAE. Smaller gap = fewer large outlier errors.")
-            fig = go.Figure([
-                go.Bar(name=f"RMSE ({unit_pref})", x=names, y=rmses,
-                       marker_color="#3b82f6", marker_line=dict(color="#1e293b", width=1)),
-                go.Bar(name=f"MAE ({unit_pref})",  x=names, y=maes,
-                       marker_color="#10b981", marker_line=dict(color="#1e293b", width=1)),
-            ])
-            fig.update_layout(barmode="group", height=340,
-                              yaxis=dict(title=f"Error ({unit_pref})", **GR),
-                              xaxis=dict(**GR),
-                              legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3b8")),
-                              **PG)
-            st.plotly_chart(fig, use_container_width=True)
-
-        with col6:
-            st.subheader("⚡ Accuracy vs Inference Speed")
-            st.caption("Top-right = high accuracy + fast. Ensemble trades speed for best accuracy.")
-            speed_ms = {"0.1ms": 0.1, "0.5ms": 0.5, "3ms": 3, "8ms": 8, "12ms": 12, "18ms": 18}
-            speeds = [speed_ms.get(m["pred_time"], 10) for m in models]
-            r2_pct = [v * 100 for v in r2s]
-            fig = go.Figure()
-            for i, m in enumerate(models):
-                fig.add_trace(go.Scatter(
-                    x=[speeds[i]], y=[r2_pct[i]],
-                    mode="markers+text",
-                    name=m["name"],
-                    text=[m["name"]],
-                    textposition="top center",
-                    textfont=dict(size=10, color=m["color"]),
-                    marker=dict(size=18, color=m["color"],
-                                line=dict(color="#0f172a", width=2)),
-                ))
-            fig.update_layout(
-                height=340, showlegend=False,
-                xaxis=dict(title="Inference Time (ms, log scale)", type="log", **GR),
-                yaxis=dict(title="R² × 100 (Accuracy)", range=[73, 100], **GR),
-                **PG,
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("---")
-
-        # ── Summary metrics table ─────────────────────────────────────────
-        st.subheader("📋 Full Metrics Summary")
-        summary_rows = []
-        for m in models:
-            summary_rows.append({
-                "Model": m["name"],
-                f"RMSE ({unit_pref})": f"{m['rmse']*cf:.1f}",
-                f"MAE ({unit_pref})":  f"{m['mae']*cf:.1f}",
-                "R²":      f"{m['r2']:.3f}",
-                "MAPE":    f"{m['mape']}%",
-                "vs BOM":  f"+{m['improvement']}%" if m["improvement"] else "—",
-                "Speed":   m["pred_time"],
-                "Grade":   "A+" if m["r2"] >= 0.98 else "A" if m["r2"] >= 0.95 else "B" if m["r2"] >= 0.85 else "C",
-            })
-        st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
-
-    # ── TAB 3: Radar Chart ───────────────────────────────────────────────────
-    @staticmethod
-    def _tab_radar(models: list) -> None:
-        """Multi-dimensional radar — full 6-model + individual selectable"""
-        PG = PerformancePage.PLOT_BG
-        GR = PerformancePage.GRID
-
-        st.subheader("🕸 Multi-Dimensional Model Comparison")
-        st.caption("5 dimensions normalised 0–100. Higher = better on every axis.")
-
-        dimensions = ["Accuracy (R²)", "Low RMSE", "Low MAPE", "Speed", "Stability"]
-
-        speed_map = {"0.1ms": 100, "0.5ms": 94, "3ms": 87, "8ms": 77, "12ms": 68, "18ms": 55}
-        stab_map  = {
-            "ensemble": 95, "xgboost": 85, "random_forest": 72,
-            "lstm": 78, "linear_regression": 55, "bom": 40
-        }
-
-        def radar_scores(m: dict) -> list:
-            return [
-                round(m["r2"] * 100, 1),
-                round(max(0, 100 - m["rmse"] / 1.4), 1),
-                round(max(0, 100 - m["mape"] * 8), 1),
-                speed_map.get(m["pred_time"], 60),
-                stab_map.get(m["id"], 60),
-            ]
-
-        def hex_to_rgba(hex_color: str, alpha: float = 0.15) -> str:
-            """Convert #rrggbb to rgba(r,g,b,a) — avoids invalid hex+alpha string."""
-            h = hex_color.lstrip("#")
-            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-            return f"rgba({r},{g},{b},{alpha})"
-
-        def make_radar_fig(subset: list, height: int = 420) -> go.Figure:
-            fig = go.Figure()
-            for m in subset:
-                scores = radar_scores(m)
-                scores_closed = scores + [scores[0]]
-                dims_closed   = dimensions + [dimensions[0]]
-                fig.add_trace(go.Scatterpolar(
-                    r=scores_closed,
-                    theta=dims_closed,
-                    fill="toself",
-                    fillcolor=hex_to_rgba(m["color"], 0.15),   # ← fix: proper rgba string
-                    line=dict(color=m["color"], width=2.5),
-                    name=m["name"],
-                    hovertemplate=(
-                        f"<b>{m['name']}</b><br>"
-                        + "<br>".join(f"{d}: %{{r[{i}]:.0f}}/100" for i, d in enumerate(dimensions))
-                        + "<extra></extra>"
-                    ),
-                ))
-            fig.update_layout(
-                polar=dict(
-                    bgcolor="#0a0f1e",
-                    radialaxis=dict(
-                        visible=True, range=[0, 100],
-                        gridcolor="#1e293b", linecolor="#334155",
-                        tickfont=dict(color="#475569", size=9),
-                        tickvals=[20, 40, 60, 80, 100],
-                    ),
-                    angularaxis=dict(
-                        gridcolor="#1e293b", linecolor="#334155",
-                        tickfont=dict(color="#cbd5e1", size=12),
-                    ),
-                ),
-                paper_bgcolor="#0f172a",
-                legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3b8", size=11)),
-                height=height,
-                margin=dict(t=40, b=40, l=60, r=60),
-            )
-            return fig
-
-        # ── View selector ─────────────────────────────────────────────────
-        view = st.radio(
-            "Chart view",
-            ["All 6 Models", "ML Models Only (no BOM)", "Top 3 vs Bottom 3"],
-            horizontal=True,
-        )
-
-        if view == "All 6 Models":
-            st.plotly_chart(make_radar_fig(models, height=480), use_container_width=True)
-        elif view == "ML Models Only (no BOM)":
-            ml_only = [m for m in models if m["id"] != "bom"]
-            st.plotly_chart(make_radar_fig(ml_only, height=480), use_container_width=True)
-        else:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("##### 🥇 Top 3 Models")
-                st.plotly_chart(make_radar_fig(models[:3], height=400), use_container_width=True)
-            with col2:
-                st.markdown("##### 📊 Remaining Models")
-                st.plotly_chart(make_radar_fig(models[3:], height=400), use_container_width=True)
-
-        # ── Scores table ──────────────────────────────────────────────────
-        st.markdown("---")
-        st.subheader("📊 Radar Scores Table")
-        score_rows = []
-        for m in models:
-            sc = radar_scores(m)
-            overall = round(sum(sc) / len(sc), 1)
-            score_rows.append({
-                "Model": m["name"],
-                "Accuracy": sc[0],
-                "Low RMSE": sc[1],
-                "Low MAPE": sc[2],
-                "Speed":    sc[3],
-                "Stability":sc[4],
-                "Overall Avg": overall,
-            })
-        score_df = pd.DataFrame(score_rows)
-        try:
-            styled_scores = (
-                score_df.style
-                .background_gradient(subset=["Accuracy","Low RMSE","Low MAPE","Speed","Stability","Overall Avg"],
-                                     cmap="RdYlGn", vmin=30, vmax=100)
-                .set_properties(**{"text-align": "center"})
-            )
-            st.dataframe(styled_scores, use_container_width=True, hide_index=True)
-        except Exception:
-            st.dataframe(score_df, use_container_width=True, hide_index=True)
-
-        # ── Dimension guide ───────────────────────────────────────────────
-        st.markdown("---")
-        st.subheader("📖 Dimension Guide")
-        guide = [
-            ("🎯 Accuracy (R²)",  "Explains what % of fabric variance the model captures. 100 = perfect R²=1.0."),
-            ("📐 Low RMSE",       "Inverted RMSE. 100 = zero error. Drops as prediction errors grow."),
-            ("📉 Low MAPE",       "Inverted % error. 100 = 0% error. Below 80 means >2.5% average miss."),
-            ("⚡ Speed",          "Inference latency. 100 = sub-millisecond. Lower = slower at serving time."),
-            ("🛡️ Stability",      "Robustness to edge cases, unusual orders, and out-of-distribution inputs."),
-        ]
-        gcols = st.columns(5)
-        for col, (dim, desc) in zip(gcols, guide):
-            with col:
-                st.info(f"**{dim}**\n\n{desc}")
-
-    # ── TAB 4: Deep Dive ─────────────────────────────────────────────────────
-    @staticmethod
-    def _tab_deep_dive(models: list, unit_pref: str, cf: float) -> None:
-        """Full profile for a selected model with visual rank charts"""
-        PG = PerformancePage.PLOT_BG
-        GR = PerformancePage.GRID
-
-        st.subheader("🔍 Individual Model Deep Dive")
-        st.caption("Select any model to see its complete performance profile, strengths, and where it ranks.")
-
-        model_names = [m["name"] for m in models]
-        selected_name = st.selectbox("Select a model to inspect", model_names, index=0)
-        if not selected_name:
-            selected_name = model_names[0]
-        m = next((x for x in models if x["name"] == selected_name), models[0])
-
-        # ── Header banner ─────────────────────────────────────────────────
-        badge_html = (
-            f"&nbsp;<span style='background:{m['color']};color:#0f172a;"
-            f"padding:2px 10px;border-radius:12px;font-size:12px;"
-            f"font-weight:700;'>{m['badge']}</span>"
-            if m["badge"] else ""
-        )
-        st.markdown(
-            f"<div style='border-left:4px solid {m['color']};padding:12px 16px;"
-            f"background:linear-gradient(90deg,{m['color']}18 0%,transparent 100%);"
-            f"border-radius:4px;margin-bottom:12px;'>"
-            f"<span style='color:{m['color']};font-size:22px;font-weight:800;'>{m['name']}</span>"
-            f"{badge_html}<br>"
-            f"<span style='color:#94a3b8;font-size:13px;'>{m['description']}</span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-
-        # ── 6 KPI metrics ─────────────────────────────────────────────────
-        k1, k2, k3, k4, k5, k6 = st.columns(6)
-        kpi_data = [
-            (k1, "R² Score",            f"{m['r2']:.3f}",                               "variance explained"),
-            (k2, f"RMSE ({unit_pref})", f"{m['rmse']*cf:.1f}",                          "root mean sq error"),
-            (k3, f"MAE ({unit_pref})",  f"{m['mae']*cf:.1f}",                           "mean abs error"),
-            (k4, "MAPE",                f"{m['mape']}%",                                 "mean abs % error"),
-            (k5, "vs BOM",              f"+{m['improvement']}%" if m["improvement"] else "baseline", "accuracy gain"),
-            (k6, "⚡ Speed",            m["pred_time"],                                  "inference latency"),
-        ]
-        for col, label, val, hlp in kpi_data:
-            with col:
-                st.metric(label=label, value=val, help=hlp)
-
-        st.markdown("---")
-
-        # ── Strengths / Weaknesses / When to use ──────────────────────────
-        col_s, col_w, col_u = st.columns(3)
-        with col_s:
-            st.markdown(f"**✅ Strengths**")
-            for s in m["strengths"]:
-                st.markdown(
-                    f"<div style='border-left:3px solid #10b981;padding:6px 10px;"
-                    f"margin:4px 0;background:#052e16;border-radius:4px;color:#6ee7b7;"
-                    f"font-size:13px;'>✅ {s}</div>",
-                    unsafe_allow_html=True,
-                )
-        with col_w:
-            st.markdown("**⚠️ Weaknesses**")
-            for w in m["weaknesses"]:
-                st.markdown(
-                    f"<div style='border-left:3px solid #f59e0b;padding:6px 10px;"
-                    f"margin:4px 0;background:#451a03;border-radius:4px;color:#fcd34d;"
-                    f"font-size:13px;'>⚠️ {w}</div>",
-                    unsafe_allow_html=True,
-                )
-        with col_u:
-            st.markdown("**📌 When to use**")
-            st.markdown(
-                f"<div style='border-left:3px solid {m['color']};padding:10px 12px;"
-                f"background:{m['color']}12;border-radius:4px;color:#e2e8f0;"
-                f"font-size:13px;'>{m['when_to_use']}</div>",
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("---")
-
-        # ── Rank vs peers ─────────────────────────────────────────────────
-        col_rank, col_spider = st.columns(2)
-
-        with col_rank:
-            st.subheader("📈 Rank vs All Models")
-            rank_data = []
-            for dim, key, higher_better in [
-                ("R² Score",           "r2",          True),
-                (f"RMSE ({unit_pref})","rmse",         False),
-                (f"MAE ({unit_pref})", "mae",          False),
-                ("MAPE %",             "mape",         False),
-                ("vs BOM %",           "improvement",  True),
-            ]:
-                sorted_m = sorted(models, key=lambda x: x[key], reverse=higher_better)
-                rank = next(i + 1 for i, x in enumerate(sorted_m) if x["id"] == m["id"])
-                rank_data.append({"Metric": dim, "Rank": rank, "of": len(models)})
-
-            rdf = pd.DataFrame(rank_data)
-            rank_colors = [m["color"] if r == 1 else "#10b981" if r <= 2 else "#334155"
-                           for r in rdf["Rank"]]
-            fig = go.Figure(go.Bar(
-                x=rdf["Rank"],
-                y=rdf["Metric"],
-                orientation="h",
-                marker_color=rank_colors,
-                marker_line=dict(color="#1e293b", width=1),
-                text=[f"#{r} of {o}" for r, o in zip(rdf["Rank"], rdf["of"])],
-                textposition="inside",
-                insidetextanchor="start",
-                textfont=dict(color="#e2e8f0", size=12),
-            ))
-            fig.update_layout(
-                height=280,
-                xaxis=dict(title="Rank (1 = best)", range=[0, len(models) + 0.5], **GR),
-                yaxis=dict(**GR),
-                showlegend=False,
-                **PG,
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-        with col_spider:
-            st.subheader("🕸 This Model's Radar Profile")
-            speed_map = {"0.1ms": 100, "0.5ms": 94, "3ms": 87, "8ms": 77, "12ms": 68, "18ms": 55}
-            stab_map  = {"ensemble": 95, "xgboost": 85, "random_forest": 72,
-                         "lstm": 78, "linear_regression": 55, "bom": 40}
-            dims = ["Accuracy", "Low RMSE", "Low MAPE", "Speed", "Stability"]
-            scores = [
-                round(m["r2"] * 100, 1),
-                round(max(0, 100 - m["rmse"] / 1.4), 1),
-                round(max(0, 100 - m["mape"] * 8), 1),
-                speed_map.get(m["pred_time"], 60),
-                stab_map.get(m["id"], 60),
-            ]
-            sc = scores + [scores[0]]
-            dm = dims + [dims[0]]
-            r, g, b = (int(m["color"].lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
-            fig = go.Figure(go.Scatterpolar(
-                r=sc, theta=dm, fill="toself",
-                fillcolor=f"rgba({r},{g},{b},0.2)",
-                line=dict(color=m["color"], width=2.5),
-                name=m["name"],
-            ))
-            fig.update_layout(
-                polar=dict(
-                    bgcolor="#0a0f1e",
-                    radialaxis=dict(visible=True, range=[0, 100],
-                                    gridcolor="#1e293b", linecolor="#334155",
-                                    tickfont=dict(color="#475569", size=8),
-                                    tickvals=[25, 50, 75, 100]),
-                    angularaxis=dict(gridcolor="#1e293b", tickfont=dict(color="#cbd5e1", size=11)),
-                ),
-                paper_bgcolor="#0f172a",
-                showlegend=False,
-                height=280,
-                margin=dict(t=30, b=30, l=50, r=50),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("---")
-
-        # ── Score vs all models bar ────────────────────────────────────────
-        st.subheader("📊 How This Model Compares on Every Metric")
-        compare_metrics = [
-            (f"RMSE ({unit_pref})", [x["rmse"] * cf for x in models], True),
-            (f"MAE ({unit_pref})",  [x["mae"]  * cf for x in models], True),
-            ("R² × 100",           [x["r2"] * 100   for x in models], False),
-            ("MAPE %",             [x["mape"]        for x in models], True),
-        ]
-        fig = make_subplots(rows=1, cols=4,
-                            subplot_titles=[cm[0] for cm in compare_metrics])
-        for ci, (metric_name, vals, lower_better) in enumerate(compare_metrics, 1):
-            bar_colors = []
-            for xi, x in enumerate(models):
-                is_selected = (x["id"] == m["id"])
-                is_best = (vals[xi] == min(vals) if lower_better else vals[xi] == max(vals))
-                if is_selected:
-                    bar_colors.append(m["color"])
-                elif is_best:
-                    bar_colors.append("#10b981")
-                else:
-                    bar_colors.append("#334155")
-            fig.add_trace(
-                go.Bar(
-                    x=[x["name"] for x in models], y=vals,
-                    marker_color=bar_colors,
-                    showlegend=False,
-                    text=[f"▶" if x["id"] == m["id"] else "" for x in models],
-                    textposition="outside",
-                    textfont=dict(color=m["color"], size=14),
-                ),
-                row=1, col=ci,
-            )
-        fig.update_layout(height=320, **PG)
-        for ci in range(1, 5):
-            fig.update_xaxes(tickangle=45, tickfont=dict(size=9), row=1, col=ci, **GR)
-            fig.update_yaxes(row=1, col=ci, **GR)
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption(f"▶ = {m['name']} (your selection) · 🟢 = best model · ⬛ = others")
-
-    # ── TAB 5: Ensemble Analysis ─────────────────────────────────────────────
-    @staticmethod
-    def _tab_ensemble(models: list, unit_pref: str, cf: float) -> None:
-        """Deep-dive into how the Ensemble model works with rich visualisations."""
-        ENS  = next(m for m in models if m["id"] == "ensemble")
-        BASE = [m for m in models if m["id"] not in ("ensemble", "bom")]
-        PG   = PerformancePage.PLOT_BG
-        GR   = PerformancePage.GRID
-
-        total_r2 = sum(m["r2"] for m in BASE)
-        weights  = {m["id"]: m["r2"] / total_r2 for m in BASE}
-
-        # ── Explainer banner ──────────────────────────────────────────────
-        st.markdown(
-            "<div style='background:linear-gradient(90deg,#f59e0b18,transparent);"
-            "border-left:4px solid #f59e0b;padding:14px 18px;border-radius:4px;'>"
-            "<span style='color:#f59e0b;font-size:18px;font-weight:700;'>⭐ Weighted Average Ensemble</span><br>"
-            "<span style='color:#cbd5e1;font-size:13px;'>"
-            "Combines all 4 base models with weights proportional to their validation R² score. "
-            "Better models contribute more. Formula: "
-            "<code style='background:#1e293b;padding:2px 6px;border-radius:3px;'>"
-            "Ŷ = Σ (wᵢ × ŷᵢ)</code></span></div>",
-            unsafe_allow_html=True,
-        )
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        # ── Row 1: Weights pie + weight table + RMSE gain ─────────────────
-        col_pie, col_tbl, col_rmse = st.columns([1, 1, 1])
-
-        with col_pie:
-            st.subheader("📐 Model Weights")
+            st.subheader("📊 Model Weights")
             fig = go.Figure(go.Pie(
-                labels=[m["name"] for m in BASE],
-                values=[weights[m["id"]] * 100 for m in BASE],
-                hole=0.58,
-                marker=dict(
-                    colors=[m["color"] for m in BASE],
-                    line=dict(color="#0a0f1e", width=3),
-                ),
+                labels=list(disp_w.keys()),
+                values=list(disp_w.values()),
+                hole=0.42,
                 textinfo="label+percent",
-                textfont=dict(size=12, color="#e2e8f0"),
-                hovertemplate="%{label}<br>Weight: %{value:.1f}%<extra></extra>",
-                pull=[0.05 if m["r2"] == max(x["r2"] for x in BASE) else 0 for m in BASE],
+                marker=dict(colors=["#3B82F6","#10B981","#F59E0B","#EF4444"]),
             ))
-            fig.add_annotation(text="Weights", x=0.5, y=0.5,
-                               font=dict(size=14, color="#94a3b8"), showarrow=False)
-            fig.update_layout(height=300, showlegend=False, **PG,
-                              margin=dict(t=10, b=10, l=10, r=10))
+            fig.update_layout(title="Weight Allocation", height=400,
+                              legend=dict(orientation="h", y=-0.15))
             st.plotly_chart(fig, use_container_width=True)
-
-        with col_tbl:
-            st.subheader("📊 Weight Details")
-            st.markdown("<br>", unsafe_allow_html=True)
-            w_rows = []
-            for m in BASE:
-                w = weights[m["id"]]
-                w_rows.append({
-                    "Model":       m["name"],
-                    "Val R²":      f"{m['r2']:.3f}",
-                    "Weight":      f"{w*100:.1f}%",
-                    f"Share of 1000{unit_pref[0]}": f"{w*1000:.0f}{unit_pref[0]}",
-                })
-            st.dataframe(pd.DataFrame(w_rows), use_container_width=True, hide_index=True, height=220)
-            st.caption("Higher R² → larger weight → more influence on the final prediction.")
-
-        with col_rmse:
-            st.subheader("📉 RMSE Gain")
-            sorted_base = sorted(BASE, key=lambda m: m["rmse"], reverse=True)
-            xnames = [m["name"] for m in sorted_base] + ["Ensemble ⭐"]
-            yvals  = [m["rmse"] * cf for m in sorted_base] + [ENS["rmse"] * cf]
-            bcolors= [m["color"] for m in sorted_base] + [ENS["color"]]
-            fig = go.Figure(go.Bar(
-                x=xnames, y=yvals,
-                marker_color=bcolors,
-                marker_line=dict(color="#1e293b", width=1),
-                text=[f"{v:.1f}" for v in yvals],
-                textposition="outside",
-                textfont=dict(color="#e2e8f0"),
-            ))
-            fig.add_hline(y=ENS["rmse"]*cf, line_dash="dot", line_color=ENS["color"],
-                          annotation_text=f"Ensemble {ENS['rmse']*cf:.1f}",
-                          annotation_font_color=ENS["color"])
-            fig.update_layout(height=300, showlegend=False,
-                              yaxis=dict(title=f"RMSE ({unit_pref})", **GR),
-                              xaxis=dict(tickangle=20, **GR), **PG,
-                              margin=dict(t=20, b=10))
-            st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("---")
-
-        # ── Row 2: Improvement KPI strip ─────────────────────────────────
-        best_base = min(BASE, key=lambda m: m["rmse"])
-        avg_base_rmse = sum(m["rmse"] for m in BASE) / len(BASE) * cf
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.metric("Ensemble RMSE", f"{ENS['rmse']*cf:.1f} {unit_pref}",
-                      delta=f"Best model in system")
-        with c2:
-            st.metric("vs Best Base Model", f"-{best_base['rmse']*cf - ENS['rmse']*cf:.1f} {unit_pref}",
-                      delta=f"Better than {best_base['name']}")
-        with c3:
-            st.metric("vs Avg of Base Models", f"-{avg_base_rmse - ENS['rmse']*cf:.1f} {unit_pref}",
-                      delta="Error reduction")
-        with c4:
-            st.metric("R² Gain vs Best Base", f"+{ENS['r2'] - best_base['r2']:.4f}",
-                      delta=f"Over {best_base['name']}")
-
-        st.markdown("---")
-
-        # ── Row 3: Simulated predictions line chart ───────────────────────
-        st.subheader("🔮 Simulated Predictions Across 8 Order Scenarios")
-        st.caption("Ensemble ⭐ (thick gold line) tracks actual consumption most closely across all scenario types.")
-
-        np.random.seed(42)
-        scenarios = [
-            {"label": "200\n(Simple)",   "true_m": 260},
-            {"label": "500\n(Simple)",   "true_m": 650},
-            {"label": "1000\n(Simple)",  "true_m": 1346},
-            {"label": "1500\n(Medium)",  "true_m": 2100},
-            {"label": "2000\n(Medium)",  "true_m": 2850},
-            {"label": "3000\n(Complex)", "true_m": 4700},
-            {"label": "4000\n(Complex)", "true_m": 6300},
-            {"label": "5000\n(Complex)", "true_m": 7900},
-        ]
-        noise_map = {"xgboost": 0.021, "random_forest": 0.024,
-                     "lstm": 0.026, "linear_regression": 0.058}
-        sim_preds = {
-            m["id"]: [max(1, s["true_m"] * (1 + np.random.normal(0, noise_map.get(m["id"], 0.03))))
-                      for s in scenarios]
-            for m in BASE
-        }
-        ens_preds = [
-            sum(weights[mid] * sim_preds[mid][i] for mid in weights)
-            for i in range(len(scenarios))
-        ]
-
-        xlabels = [s["label"] for s in scenarios]
-        true_cf = [s["true_m"] * cf for s in scenarios]
-        ens_cf  = [v * cf for v in ens_preds]
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=xlabels, y=true_cf, name="✓ Actual",
-            line=dict(color="#ffffff", width=2.5, dash="dot"),
-            mode="lines+markers", marker=dict(size=9, symbol="diamond", color="#ffffff"),
-        ))
-        for m in BASE:
-            fig.add_trace(go.Scatter(
-                x=xlabels, y=[v * cf for v in sim_preds[m["id"]]],
-                name=m["name"], mode="lines+markers", opacity=0.75,
-                line=dict(color=m["color"], width=1.5, dash="dash"),
-                marker=dict(size=5, color=m["color"]),
-            ))
-        fig.add_trace(go.Scatter(
-            x=xlabels, y=ens_cf, name="Ensemble ⭐",
-            line=dict(color=ENS["color"], width=4),
-            mode="lines+markers",
-            marker=dict(size=10, symbol="star", color=ENS["color"]),
-        ))
-        fig.update_layout(
-            height=420, hovermode="x unified",
-            yaxis=dict(title=f"Predicted Consumption ({unit_pref})", **GR),
-            xaxis=dict(title="Order Scenario (qty + complexity)", **GR),
-            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3b8", size=11),
-                        orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            **PG,
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("---")
-
-        # ── Row 4: Error heatmap + error bar chart ────────────────────────
-        col_heat, col_err = st.columns(2)
-
-        with col_heat:
-            st.subheader("🌡️ Error Heatmap")
-            st.caption("Lighter = lower error. Ensemble row is consistently lightest.")
-            all_m   = BASE + [ENS]
-            mnames  = [m["name"] for m in all_m]
-            heat_z  = []
-            for m in BASE:
-                heat_z.append([round(abs(sim_preds[m["id"]][i]*cf - true_cf[i]), 1)
-                                for i in range(len(scenarios))])
-            heat_z.append([round(abs(ens_cf[i] - true_cf[i]), 1) for i in range(len(scenarios))])
-            fig = go.Figure(go.Heatmap(
-                z=heat_z, x=xlabels, y=mnames,
-                colorscale="RdYlGn_r",
-                text=[[f"{v:.0f}" for v in row] for row in heat_z],
-                texttemplate="%{text}",
-                textfont=dict(size=10, color="#ffffff"),
-                hovertemplate="Model: %{y}<br>Scenario: %{x}<br>Error: %{z:.1f}<extra></extra>",
-                showscale=True,
-                colorbar=dict(title=f"Error<br>({unit_pref})", tickfont=dict(color="#94a3b8")),
-            ))
-            fig.update_layout(height=320, xaxis=dict(tickfont=dict(size=9), **GR), **PG)
-            st.plotly_chart(fig, use_container_width=True)
-
-        with col_err:
-            st.subheader("📊 Average Error Per Model")
-            st.caption("Mean absolute error across all 8 scenarios.")
-            avg_errors = {}
-            for m in BASE:
-                avg_errors[m["name"]] = np.mean([abs(sim_preds[m["id"]][i]*cf - true_cf[i])
-                                                  for i in range(len(scenarios))])
-            avg_errors[ENS["name"]] = np.mean([abs(ens_cf[i] - true_cf[i])
-                                                for i in range(len(scenarios))])
-            sorted_err = sorted(avg_errors.items(), key=lambda x: x[1], reverse=True)
-            err_names  = [k for k, _ in sorted_err]
-            err_vals   = [v for _, v in sorted_err]
-            err_colors = [ENS["color"] if n == ENS["name"] else
-                          next(x["color"] for x in models if x["name"] == n)
-                          for n in err_names]
-            fig = go.Figure(go.Bar(
-                x=err_vals, y=err_names, orientation="h",
-                marker_color=err_colors,
-                marker_line=dict(color="#1e293b", width=1),
-                text=[f"{v:.1f}" for v in err_vals],
-                textposition="outside",
-                textfont=dict(color="#e2e8f0"),
-            ))
-            fig.update_layout(height=320, showlegend=False,
-                              xaxis=dict(title=f"Avg Error ({unit_pref})", **GR),
-                              yaxis=dict(**GR), **PG)
-            st.plotly_chart(fig, use_container_width=True)
-
-        st.markdown("---")
-
-        # ── Row 5: Why ensemble wins summary ─────────────────────────────
-        st.subheader("🔬 Why Ensemble Outperforms Every Individual Model")
-        ca, cb, cc = st.columns(3)
-        with ca:
-            st.success(
-                "**Error Cancellation**\n\n"
-                "When XGBoost overshoots, LSTM may undershoot. "
-                "Weighted averaging partially cancels these opposite errors — "
-                "this is called **variance reduction**."
-            )
-        with cb:
-            st.info(
-                "**Complementary Strengths**\n\n"
-                "XGBoost excels on standard orders. LSTM handles unusual inputs. "
-                "Random Forest is noise-resistant. Linear Regression anchors the prediction. "
-                "Ensemble inherits **all** these strengths."
-            )
-        with cc:
-            weight_lines = "\n".join(
-                f"• {m['name']}: **{weights[m['id']]*100:.1f}%**"
-                for m in BASE
-            )
-            st.warning(
-                f"**Current Weights**\n\n{weight_lines}\n\n"
-                "Weights auto-update when you retrain on new data."
-            )
-
-
-    # ── Conversion reference (unchanged) ────────────────────────────────────
-    @staticmethod
-    def _render_conversion_reference(unit_pref: str) -> None:
-        """Render unit conversion reference"""
-        st.markdown("---")
-        st.subheader("📏 Unit Conversion Reference")
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.info(f"""
-            **Meters to Yards**
-            1 meter = {UnitConverter.METERS_TO_YARDS:.4f} yards
-
-            **Example:**
-            100 m = {UnitConverter.meters_to_yards(100):.2f} yd
-            """)
 
         with col2:
-            st.info(f"""
-            **Yards to Meters**
-            1 yard = {UnitConverter.YARDS_TO_METERS:.4f} meters
+            st.subheader("📈 Weight vs Performance")
+            ml_only = metrics_df[
+                metrics_df["Model"].isin(disp_w.keys())
+            ].copy()
+            ml_only["Weight"] = ml_only["Model"].map(disp_w).fillna(0)
+            if not ml_only.empty:
+                fig = px.scatter(
+                    ml_only, x="R2", y="MAPE",
+                    size="Weight",
+                    color="Model",
+                    color_discrete_sequence=ml_only["Color"].tolist(),
+                    hover_data=["RMSE", "MAE"],
+                    text="Model",
+                    title="R² vs MAPE (bubble = weight)",
+                )
+                fig.update_traces(textposition="top center")
+                fig.update_layout(height=400, showlegend=False,
+                                  xaxis_title="R² Score", yaxis_title="MAPE %",
+                                  yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig, use_container_width=True)
 
-            **Example:**
-            100 yd = {UnitConverter.yards_to_meters(100):.2f} m
-            """)
+        st.markdown("---")
+        wt_rows = [{"Model": m, "Weight": f"{w:.4f}",
+                    "Weight %": f"{w*100:.1f}%"}
+                   for m, w in sorted(disp_w.items(),
+                                      key=lambda x: x[1], reverse=True)]
+        st.dataframe(pd.DataFrame(wt_rows), use_container_width=True)
 
-        with col3:
-            st.info(f"""
-            **Quick Reference**
-            50 m = {UnitConverter.meters_to_yards(50):.1f} yd
-            100 m = {UnitConverter.meters_to_yards(100):.1f} yd
-            500 m = {UnitConverter.meters_to_yards(500):.1f} yd
+        with st.expander("ℹ️ How ensemble weights are computed"):
+            st.markdown("""
+**Algorithm** (`train_models.py → ModelTrainer.train_ensemble()`):
+
+1. Each base model is evaluated on the **validation set** after training
+2. Validation R² is computed per model: `R²_xgb, R²_rf, R²_lstm, R²_lr`
+3. Negative R² values clamped to 0 (model worse than mean baseline gets no weight)
+4. Weights normalised to sum to 1:
+```
+weight_i = max(0, R²_i) / Σ max(0, R²_j)
+```
+5. Ensemble prediction = Σ (weight_i × prediction_i)
+
+**Why validation R²?** Using held-out validation data prevents overfitted models
+from receiving disproportionately large weights — a standard technique in blended ensembles.
             """)
 
 
@@ -3209,7 +2930,7 @@ class ROICalculatorPage:
         ROICalculatorPage._render_financial_analysis(
             monthly_orders, avg_order_value, current_waste_rate,
             ml_improvement, implementation_cost, monthly_maintenance,
-            implementation_months, fabric_cost, unit_pref
+            implementation_months, fabric_cost, unit_pref, show_dual_units
         )
 
     @staticmethod
@@ -3222,7 +2943,8 @@ class ROICalculatorPage:
         monthly_maintenance: float,
         implementation_months: int,
         fabric_cost: float,
-        unit_pref: str
+        unit_pref: str,
+        show_dual_units: bool = True
     ) -> None:
         """Render financial analysis results"""
         st.markdown("---")
@@ -3238,16 +2960,11 @@ class ROICalculatorPage:
 
         first_year_cost = implementation_cost + (monthly_maintenance * 12)
         first_year_benefit = annual_savings * ((12 - implementation_months) / 12)
-        first_year_roi = ((first_year_benefit - first_year_cost) / first_year_cost) * 100 if first_year_cost > 0 else 0.0
-        payback_months = (implementation_cost / (annual_savings / 12)) if annual_savings > 0 else float('inf')
+        first_year_roi = ((first_year_benefit - first_year_cost) / first_year_cost) * 100
+        payback_months = implementation_cost / (annual_savings / 12)
 
-        # Fix: three_year_benefit should not double-count maintenance already in first_year_cost
-        # Cost = impl_cost + 36 months of maintenance; Benefit = annual_savings * (active months / 12 * 3 years)
-        total_3yr_cost = implementation_cost + (monthly_maintenance * 36)
-        active_months = max(0, 36 - implementation_months)
-        total_3yr_benefit = annual_savings * (active_months / 12)
-        three_year_benefit = total_3yr_benefit - total_3yr_cost
-        three_year_roi = (three_year_benefit / implementation_cost) * 100 if implementation_cost > 0 else 0.0
+        three_year_benefit = (annual_savings * 3) - (first_year_cost + (monthly_maintenance * 24))
+        three_year_roi = (three_year_benefit / first_year_cost) * 100
 
         # Display metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -3257,8 +2974,7 @@ class ROICalculatorPage:
                      delta=f"{ml_improvement:.0f}% reduction")
 
         with col2:
-            payback_display = f"{payback_months:.1f} months" if payback_months != float('inf') else "N/A (no savings)"
-            st.metric("📅 Payback Period", payback_display,
+            st.metric("📅 Payback Period", f"{payback_months:.1f} months",
                      delta="Break-even")
 
         with col3:
@@ -3278,7 +2994,7 @@ class ROICalculatorPage:
         # Environmental impact
         ROICalculatorPage._render_environmental_impact(
             current_annual_waste, ml_improvement, fabric_cost, unit_pref,
-            show_dual_units=st.session_state.get('show_dual_units', True)
+            show_dual_units=show_dual_units
         )
 
     @staticmethod
@@ -3527,14 +3243,18 @@ class DocumentationPage:
         ### General Questions
 
         **Q: How accurate are the predictions?**
-        A: 97-98% accuracy (R² score), 60-70% better than traditional BOM.
+        A: See the **📈 Performance** tab for full test-set metrics including R², RMSE,
+        MAE, and MAPE. In demo mode, the Ensemble model achieves R² ≈ 0.987 and
+        MAPE ≈ 1.9%, versus MAPE ≈ 8.5% for the traditional BOM baseline.
 
         **Q: Can I use my own historical data?**
         A: Yes! Upload CSV in batch prediction mode. Models can be retrained
         on your data.
 
         **Q: What's the typical ROI?**
-        A: Most facilities see 200-500% ROI in first year through waste reduction.
+        A: Use the **💰 ROI Calculator** tab to estimate ROI for your specific
+        production volume, waste rate, and implementation cost. Results are
+        derived from your actual inputs, not industry averages.
 
         **Q: Does unit choice affect model accuracy?**
         A: No. The AI learns patterns regardless of unit. Predictions are equally
@@ -3559,17 +3279,14 @@ class SidebarRenderer:
     """Main sidebar renderer"""
 
     @staticmethod
-    def render(models_loaded: bool, mode: ProcessingMode) -> str:
+    def render(models_loaded: bool, mode: ProcessingMode) -> Tuple[str, bool]:
         """Render the main sidebar
 
         Returns:
-            str: selected_page
+            tuple: (selected_page, unit_preference)
         """
         # App title and logo
-        st.sidebar.markdown(
-            "<div style='text-align:center; font-size:3rem;'>🧵</div>",
-            unsafe_allow_html=True
-        )
+        st.sidebar.image("https://img.icons8.com/fluency/96/000000/sewing-machine.png", width=80)
         st.sidebar.title("🧵 Fabric Forecast Pro")
 
         # Unit settings
@@ -3596,13 +3313,13 @@ class SidebarRenderer:
         unit_pref = st.sidebar.radio(
             "Preferred Unit",
             options=[UnitType.METERS.value, UnitType.YARDS.value],
-            index=0 if st.session_state.get('unit_preference', UnitType.METERS.value) == UnitType.METERS.value else 1,
+            index=0 if st.session_state.unit_preference == UnitType.METERS.value else 1,
             help="Select your preferred measurement unit"
         )
         st.session_state.unit_preference = unit_pref
         st.session_state.show_dual_units = st.sidebar.checkbox(
             "Show both units",
-            value=st.session_state.get('show_dual_units', True),
+            value=True,
             help="Display values in both meters and yards"
         )
 
@@ -3641,12 +3358,7 @@ class SidebarRenderer:
         status_color = "🟢" if mode == ProcessingMode.PRODUCTION else "🟡"
         status_text = "Production Mode" if mode == ProcessingMode.PRODUCTION else "Demo Mode"
         st.sidebar.info(f"{status_color} **{status_text}**")
-
-        # LSTM availability
-        if AppConfig.LSTM_AVAILABLE:
-            st.sidebar.success("🧠 LSTM: Enabled")
-        else:
-            st.sidebar.warning("🧠 LSTM: Disabled (TensorFlow not installed)")
+        st.sidebar.caption(f"v{AppConfig.APP_VERSION} · restart Streamlit after updating app.py")
 
         session_stats = SessionManager.get_session_stats()
         st.sidebar.metric("Total Predictions", session_stats['predictions_count'])
@@ -3656,18 +3368,17 @@ class SidebarRenderer:
     def _render_about() -> None:
         """Render about section"""
         st.sidebar.markdown("---")
-        st.sidebar.markdown("""
+        st.sidebar.markdown(f"""
         **About This System**
 
-        AI-powered fabric consumption forecasting with:
-        - ✅ Dual unit support (meters/yards)
-        - ✅ 60-70% accuracy improvement
-        - ✅ Ensemble model (best combined)
-        - ✅ Real-time predictions
-        - ✅ Production-ready architecture
+        ML-based fabric consumption forecasting
+        for apparel manufacturing, featuring:
+        - ✅ Dual unit support (m / yd)
+        - ✅ 5 ML models + BOM baseline
+        - ✅ Empirical confidence intervals
+        - ✅ Batch CSV prediction
 
-        **Version 2.0.0**
-        *Developed by Azim Mahmud*
+        **v{AppConfig.APP_VERSION}** · *{AppConfig.APP_AUTHOR}*
         © January 2026
         """)
 
@@ -3680,7 +3391,7 @@ def main():
     """
     Main application entry point.
 
-    Developer: Azim Mahmud | Version 1.0.0
+    Developer: Azim Mahmud | Version 3.0.0
     """
     try:
         # Configure page
@@ -3741,7 +3452,7 @@ Release: January 2026"""
             "📊 Batch Prediction": lambda: BatchPredictionPage.render(
                 unit_pref, show_dual_units, model_manager
             ),
-            "📈 Performance": lambda: PerformancePage.render(unit_pref),
+            "📈 Performance": lambda: PerformancePage.render(unit_pref, model_manager),
             "💰 ROI Calculator": lambda: ROICalculatorPage.render(unit_pref, show_dual_units),
             "📚 Documentation": lambda: DocumentationPage.render(
                 unit_pref, show_dual_units, production_mode
@@ -3749,23 +3460,25 @@ Release: January 2026"""
         }
 
         if page in page_handlers:
-            page_handlers[page]()
+            try:
+                page_handlers[page]()
+            except Exception as page_err:
+                logger.error(f"Page render error on '{page}': {page_err}")
+                logger.debug(traceback.format_exc())
+                st.error(f"❌ Error rendering **{page}**. Details: {page_err}")
+                if AppConfig.DEBUG:
+                    st.code(traceback.format_exc())
 
         # Render footer
         UIHelpers.render_footer(unit_pref, production_mode)
 
     except Exception as e:
-        tb = traceback.format_exc()
         logger.critical(f"Fatal error in main: {e}")
-        logger.critical(tb)
+        logger.debug(traceback.format_exc())
 
         st.error("❌ A critical error occurred. Please refresh the page.")
         if AppConfig.DEBUG:
-            st.error(f"**Error:** {e}")
-            st.code(tb, language="python")
-        else:
-            # Show enough info in all modes so users can report issues
-            st.warning(f"**Error details (for support):** `{type(e).__name__}: {e}`")
+            st.error(f"Error details: {e}")
 
 
 if __name__ == "__main__":

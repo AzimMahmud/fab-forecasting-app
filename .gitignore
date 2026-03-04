@@ -111,6 +111,10 @@ generated_data/*demo*.txt
 !generated_data/training_*.txt
 !generated_data/batch_prediction_template.csv
 
+# Keep the 10,000-row production datasets for Streamlit Cloud
+!generated_data/*10000*.csv
+!generated_data/*10000*.txt
+
 # Ignore other CSV/JSON files in root (but allow in generated_data/)
 *.csv
 *.xlsx

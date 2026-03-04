@@ -505,23 +505,23 @@ def main():
     export_csv(df3, f"{out}/training_dataset_1000_orders_meters.csv")
     export_summary(df3, f"{out}/training_dataset_1000_orders_meters_summary.txt")
 
-    # ── Dataset 4: 5 000-row production set (meters) ───────────────────────────
+    # ── Dataset 4: 10 000-row production set (meters) ──────────────────────────
     print("\n" + "-" * 70)
-    print("DATASET 4 — Production  5 000 orders  (meters)")
-    df4 = gen.generate_dataset(5000, "2022-01-01", "meters")
-    export_csv(df4, f"{out}/production_dataset_5000_orders_meters.csv")
-    export_summary(df4, f"{out}/production_dataset_5000_orders_meters_summary.txt")
+    print("DATASET 4 — Production  10 000 orders  (meters)")
+    df4 = gen.generate_dataset(10000, "2022-01-01", "meters")
+    export_csv(df4, f"{out}/production_dataset_10000_orders_meters.csv")
+    export_summary(df4, f"{out}/production_dataset_10000_orders_meters_summary.txt")
 
-    # ── Dataset 5: 5 000-row production set (yards) ────────────────────────────
+    # ── Dataset 5: 10 000-row production set (yards) ───────────────────────────
     print("\n" + "-" * 70)
-    print("DATASET 5 — Production  5 000 orders  (yards)")
-    df5 = gen.generate_dataset(5000, "2022-01-01", "yards")
-    export_csv(df5, f"{out}/production_dataset_5000_orders_yards.csv")
-    export_summary(df5, f"{out}/production_dataset_5000_orders_yards_summary.txt")
+    print("DATASET 5 — Production  10 000 orders  (yards)")
+    df5 = gen.generate_dataset(10000, "2022-01-01", "yards")
+    export_csv(df5, f"{out}/production_dataset_10000_orders_yards.csv")
+    export_summary(df5, f"{out}/production_dataset_10000_orders_yards_summary.txt")
 
     # ── Dataset 6: Batch upload template ──────────────────────────────────────
     print("\n" + "-" * 70)
-    print("DATASET 5 — Batch Prediction Template")
+    print("DATASET 6 — Batch Prediction Template")
     create_batch_template(f"{out}/batch_prediction_template.csv", n_samples=10)
 
     print("\n" + "=" * 70)
@@ -534,8 +534,8 @@ Files written to generated_data/:
     training_dataset_1000_orders_meters.csv    (1 000 rows) <- PRIMARY
 
   Production:
-    production_dataset_5000_orders_meters.csv  (5 000 rows)
-    production_dataset_5000_orders_yards.csv   (5 000 rows)
+    production_dataset_10000_orders_meters.csv (10 000 rows)
+    production_dataset_10000_orders_yards.csv  (10 000 rows)
 
   Demo:
     demo_dataset_100_orders_meters.csv  (100 rows)

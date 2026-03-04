@@ -1,6 +1,6 @@
 {
   "version": "3.0.0",
-  "training_date": "2026-03-04 21:45:52",
+  "training_date": "2026-03-04 21:48:08",
   "unit": "meters",
   "feature_names": [
     "order_quantity",
@@ -61,7 +61,7 @@
       "r2": 0.9788,
       "mape": 16.74,
       "ci_bounds": {
-        "lower_offset_m": -1490.175491356576,
+        "lower_offset_m": -1490.1754913565726,
         "upper_offset_m": 946.7994179141824,
         "ci_fraction": 0.1918,
         "percentile": 90
@@ -128,42 +128,42 @@
       "file": "lstm_model.h5",
       "type": "tensorflow.keras.Sequential",
       "n_features": 9,
-      "rmse": 393.252,
-      "mae": 292.704,
-      "r2": 0.9945,
-      "mape": 6.85,
+      "rmse": 422.708,
+      "mae": 308.728,
+      "r2": 0.9936,
+      "mape": 7.06,
       "ci_bounds": {
-        "lower_offset_m": -694.542945120933,
-        "upper_offset_m": 525.3605419199172,
-        "ci_fraction": 0.0902,
+        "lower_offset_m": -784.2352600824631,
+        "upper_offset_m": 565.8391876118153,
+        "ci_fraction": 0.102,
         "percentile": 90
       },
       "training_history": {
-        "final_train_loss": 1349218.5,
-        "final_val_loss": 156663.90625,
+        "final_train_loss": 1584345.125,
+        "final_val_loss": 174132.359375,
         "epochs_trained": 50
       },
-      "improvement_vs_bom_pct": -0.2
+      "improvement_vs_bom_pct": -0.3
     },
     "ensemble": {
       "file": "ensemble_model.pkl",
       "type": "WeightedAverageEnsemble",
       "n_features": 9,
-      "rmse": 674.367,
-      "mae": 476.525,
-      "r2": 0.9838,
-      "mape": 13.29,
+      "rmse": 683.685,
+      "mae": 480.319,
+      "r2": 0.9833,
+      "mape": 13.37,
       "ci_bounds": {
-        "lower_offset_m": -1310.053914152994,
-        "upper_offset_m": 886.5114213512603,
-        "ci_fraction": 0.1689,
+        "lower_offset_m": -1315.1231899389222,
+        "upper_offset_m": 888.7724617354374,
+        "ci_fraction": 0.1697,
         "percentile": 90
       },
       "weights": {
-        "linear_regression": 0.22515426661276772,
-        "random_forest": 0.25558085242914835,
-        "xgboost": 0.2595886459379277,
-        "lstm": 0.2596762350201563
+        "linear_regression": 0.22518921131636277,
+        "random_forest": 0.2556205194417574,
+        "xgboost": 0.25962893497364264,
+        "lstm": 0.2595613342682373
       },
       "weighted_by": "validation_r2",
       "improvement_vs_bom_pct": -1.3

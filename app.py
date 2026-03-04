@@ -1854,11 +1854,17 @@ class SinglePredictionPage:
                    if unit_pref == 'yards' else result.prediction)
         if _pred_m < _physics_lo or _pred_m > _physics_hi:
             _pct_off = (_pred_m / _det_base - 1.0) * 100
+            # Convert expected range to user's preferred unit for display
+            _range_lo_disp = (UnitConverter.meters_to_yards(_physics_lo)
+                             if unit_pref == 'yards' else _physics_lo)
+            _range_hi_disp = (UnitConverter.meters_to_yards(_physics_hi)
+                             if unit_pref == 'yards' else _physics_hi)
+            _range_unit = 'yards' if unit_pref == 'yards' else 'm'
             st.warning(
                 f"⚠️ **Model Reliability Notice** — The **{result.model_name.replace('_',' ').title()}** "
                 f"prediction ({result.prediction:.1f} {unit_pref}) is **{abs(_pct_off):.1f}% "
                 f"{'above' if _pct_off > 0 else 'below'}** the physics-based expected range "
-                f"({_physics_lo:.0f}–{_physics_hi:.0f} m). "
+                f"({_range_lo_disp:.0f}–{_range_hi_disp:.0f} {_range_unit}). "
                 f"This model may be overfitting or underfitting on this input. "
                 f"Consider using **Ensemble (Best)** or retraining on the 5,000-row production dataset.",
                 icon="⚠️"

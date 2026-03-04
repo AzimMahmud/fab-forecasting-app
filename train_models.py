@@ -86,8 +86,8 @@ class TrainingConfig:
 
     # ── Data ────────────────────────────────────────────────────────────────
     DATA_PATH     = Path("generated_data")
-    # Using 10000-row production dataset for training (improved model accuracy)
-    TRAINING_DATA = "production_dataset_10000_orders_meters.csv"
+    # Using 5000-row production dataset for training (improved model accuracy)
+    TRAINING_DATA = "production_dataset_5000_orders_meters.csv"
 
     # ── Model output ────────────────────────────────────────────────────────
     MODEL_PATH   = Path("models")

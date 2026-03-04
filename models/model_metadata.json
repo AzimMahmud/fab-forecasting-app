@@ -1,6 +1,6 @@
 {
   "version": "3.0.0",
-  "training_date": "2026-03-04 21:49:48",
+  "training_date": "2026-03-04 21:54:48",
   "unit": "meters",
   "feature_names": [
     "order_quantity",
@@ -31,148 +31,148 @@
       "file": "linear_regression_model.pkl",
       "type": "sklearn.linear_model.LinearRegression",
       "n_features": 9,
-      "rmse": 1984.307,
-      "mae": 1501.305,
-      "r2": 0.8595,
-      "mape": 52.43,
+      "rmse": 1887.648,
+      "mae": 1453.865,
+      "r2": 0.861,
+      "mape": 46.35,
       "ci_bounds": {
-        "lower_offset_m": -3575.299219140575,
-        "upper_offset_m": 3017.551912389128,
-        "ci_fraction": 0.46,
+        "lower_offset_m": -3122.2515369462117,
+        "upper_offset_m": 3132.960968097213,
+        "ci_fraction": 0.4116,
         "percentile": 90
       },
       "cross_validation": {
         "cv_folds": 5,
-        "rmse_mean": 2009.036,
-        "rmse_std": 20.466,
-        "r2_mean": 0.8599,
-        "r2_std": 0.0035,
-        "mape_mean": 52.26,
-        "mape_std": 1.49
+        "rmse_mean": 1953.458,
+        "rmse_std": 61.643,
+        "r2_mean": 0.8668,
+        "r2_std": 0.0057,
+        "mape_mean": 48.69,
+        "mape_std": 5.2
       },
-      "improvement_vs_bom_pct": -13.8
+      "improvement_vs_bom_pct": -13.6
     },
     "random_forest": {
       "file": "random_forest_model.pkl",
       "type": "sklearn.ensemble.RandomForestRegressor",
       "n_features": 9,
-      "rmse": 770.308,
-      "mae": 555.548,
-      "r2": 0.9788,
-      "mape": 16.74,
+      "rmse": 856.934,
+      "mae": 610.731,
+      "r2": 0.9714,
+      "mape": 17.64,
       "ci_bounds": {
-        "lower_offset_m": -1490.1754913565794,
-        "upper_offset_m": 946.7994179141824,
-        "ci_fraction": 0.1918,
+        "lower_offset_m": -1541.6073785185904,
+        "upper_offset_m": 1066.4214342441987,
+        "ci_fraction": 0.2055,
         "percentile": 90
       },
       "cross_validation": {
         "cv_folds": 5,
-        "rmse_mean": 758.817,
-        "rmse_std": 11.705,
-        "r2_mean": 0.98,
-        "r2_std": 0.0007,
-        "mape_mean": 15.82,
-        "mape_std": 0.79
+        "rmse_mean": 855.918,
+        "rmse_std": 33.024,
+        "r2_mean": 0.9744,
+        "r2_std": 0.0018,
+        "mape_mean": 18.17,
+        "mape_std": 1.49
       },
       "feature_importance": {
-        "order_quantity": 0.6451905883438129,
-        "fabric_width_cm": 0.024271486743125525,
-        "marker_efficiency": 0.010588532664085217,
-        "defect_rate": 0.01148805248343981,
-        "operator_experience": 0.0065471401025638636,
-        "garment_type_encoded": 0.26064376831684327,
-        "fabric_type_encoded": 0.003230735813270241,
-        "pattern_complexity_encoded": 0.03505208528735237,
-        "season_encoded": 0.002987610245506854
+        "order_quantity": 0.62616041985506,
+        "fabric_width_cm": 0.022888604527581947,
+        "marker_efficiency": 0.017137388341589177,
+        "defect_rate": 0.01522841751535369,
+        "operator_experience": 0.010040006897796801,
+        "garment_type_encoded": 0.259096367184416,
+        "fabric_type_encoded": 0.005227861111567659,
+        "pattern_complexity_encoded": 0.039677624103087124,
+        "season_encoded": 0.004543310463547795
       },
-      "improvement_vs_bom_pct": -1.8
+      "improvement_vs_bom_pct": -2.5
     },
     "xgboost": {
       "file": "xgboost_model.pkl",
       "type": "xgboost.XGBRegressor",
       "n_features": 9,
-      "rmse": 396.357,
-      "mae": 280.023,
-      "r2": 0.9944,
-      "mape": 5.9,
+      "rmse": 547.485,
+      "mae": 388.96,
+      "r2": 0.9883,
+      "mape": 7.87,
       "ci_bounds": {
-        "lower_offset_m": -680.7767063622142,
-        "upper_offset_m": 567.8501496435192,
-        "ci_fraction": 0.0876,
+        "lower_offset_m": -1038.5938815799682,
+        "upper_offset_m": 783.971852366156,
+        "ci_fraction": 0.1385,
         "percentile": 90
       },
       "cross_validation": {
         "cv_folds": 5,
-        "rmse_mean": 363.144,
-        "rmse_std": 10.734,
-        "r2_mean": 0.9954,
-        "r2_std": 0.0002,
-        "mape_mean": 5.11,
-        "mape_std": 0.2
+        "rmse_mean": 472.547,
+        "rmse_std": 17.702,
+        "r2_mean": 0.9922,
+        "r2_std": 0.0008,
+        "mape_mean": 7.05,
+        "mape_std": 0.32
       },
       "feature_importance": {
-        "order_quantity": 0.3384910523891449,
-        "fabric_width_cm": 0.04240064695477486,
-        "marker_efficiency": 0.0066795628517866135,
-        "defect_rate": 0.007330639287829399,
-        "operator_experience": 0.007343081757426262,
-        "garment_type_encoded": 0.47607946395874023,
-        "fabric_type_encoded": 0.0054824138060212135,
-        "pattern_complexity_encoded": 0.10937030613422394,
-        "season_encoded": 0.006822843104600906
+        "order_quantity": 0.3120471239089966,
+        "fabric_width_cm": 0.03560332953929901,
+        "marker_efficiency": 0.014045997522771358,
+        "defect_rate": 0.008462268859148026,
+        "operator_experience": 0.010327344760298729,
+        "garment_type_encoded": 0.508399248123169,
+        "fabric_type_encoded": 0.008262084797024727,
+        "pattern_complexity_encoded": 0.0939670130610466,
+        "season_encoded": 0.008885622024536133
       },
-      "improvement_vs_bom_pct": -0.2
+      "improvement_vs_bom_pct": -0.8
     },
     "lstm": {
       "file": "lstm_model.h5",
       "type": "tensorflow.keras.Sequential",
       "n_features": 9,
-      "rmse": 408.502,
-      "mae": 307.574,
-      "r2": 0.994,
-      "mape": 7.18,
+      "rmse": 900.864,
+      "mae": 641.057,
+      "r2": 0.9684,
+      "mape": 15.5,
       "ci_bounds": {
-        "lower_offset_m": -605.0544517866518,
-        "upper_offset_m": 700.0841712918929,
-        "ci_fraction": 0.0899,
+        "lower_offset_m": -1941.5344882350694,
+        "upper_offset_m": 1191.541228556748,
+        "ci_fraction": 0.2633,
         "percentile": 90
       },
       "training_history": {
-        "final_train_loss": 1334288.0,
-        "final_val_loss": 183588.6875,
+        "final_train_loss": 2082367.5,
+        "final_val_loss": 827123.5,
         "epochs_trained": 50
       },
-      "improvement_vs_bom_pct": -0.3
+      "improvement_vs_bom_pct": -2.8
     },
     "ensemble": {
       "file": "ensemble_model.pkl",
       "type": "WeightedAverageEnsemble",
       "n_features": 9,
-      "rmse": 678.882,
-      "mae": 486.227,
-      "r2": 0.9836,
-      "mape": 13.56,
+      "rmse": 817.115,
+      "mae": 566.902,
+      "r2": 0.974,
+      "mape": 14.24,
       "ci_bounds": {
-        "lower_offset_m": -1300.5868538255124,
-        "upper_offset_m": 923.3408424444502,
-        "ci_fraction": 0.1672,
+        "lower_offset_m": -1555.2989456456307,
+        "upper_offset_m": 1067.9576927331675,
+        "ci_fraction": 0.2076,
         "percentile": 90
       },
       "weights": {
-        "linear_regression": 0.22517441781066588,
-        "random_forest": 0.2556037267917521,
-        "xgboost": 0.2596118789961109,
-        "lstm": 0.25960997640147115
+        "linear_regression": 0.22890530122156308,
+        "random_forest": 0.2557510314846383,
+        "xgboost": 0.2600907452278091,
+        "lstm": 0.2552529220659896
       },
       "weighted_by": "validation_r2",
-      "improvement_vs_bom_pct": -1.3
+      "improvement_vs_bom_pct": -2.2
     }
   },
   "bom_baseline": {
-    "rmse": 302.827,
-    "mae": 203.973,
-    "r2": 0.9967,
-    "mape": 2.81
+    "rmse": 309.411,
+    "mae": 206.824,
+    "r2": 0.9963,
+    "mape": 2.89
   }
 }

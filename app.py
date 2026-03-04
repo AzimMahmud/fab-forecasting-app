@@ -159,7 +159,15 @@ class AppConfig:
     GARMENT_TYPES = ["T-Shirt", "Shirt", "Pants", "Dress", "Jacket"]
     FABRIC_TYPES = ["Cotton", "Polyester", "Cotton-Blend", "Silk", "Denim"]
     FABRIC_WIDTHS_INCHES = [55, 59, 63, 71]
-    FABRIC_WIDTHS_CM = [140, 150, 160, 180]
+    # Exact cm equivalents derived from inches (in × 2.54).
+    # These are the values actually used for ML feature input and BOM calculation.
+    FABRIC_WIDTHS_CM     = [round(i * 2.54, 2) for i in FABRIC_WIDTHS_INCHES]
+    # inch ↔ cm lookup for lossless reverse conversion (avoids 140÷2.54=55.118→"55.1"").
+    WIDTH_CM_TO_INCHES   = {round(i * 2.54, 2): i for i in FABRIC_WIDTHS_INCHES}
+    # Display labels for the cm selectbox — show rounded values users recognise
+    # (140, 150, 160, 180) while the actual internal value is exact (139.70 etc.).
+    FABRIC_WIDTHS_CM_DISPLAY = {round(i * 2.54, 2): d
+                                for i, d in zip(FABRIC_WIDTHS_INCHES, [140, 150, 160, 180])}
     PATTERN_COMPLEXITIES = ["Simple", "Medium", "Complex"]
     SEASONS = ["Spring", "Summer", "Fall", "Winter"]
 
@@ -896,9 +904,26 @@ class ModelManager:
                 # Traditional ML models: XGBoost, Random Forest, Linear Regression
                 prediction_base = float(model.predict(features)[0])
 
-            # Validate prediction
-            if not np.isfinite(prediction_base) or prediction_base <= 0:
-                raise PredictionError(f"Invalid prediction value: {prediction_base}")
+            # Validate and floor prediction.
+            # Linear models can extrapolate to negative values for small/unusual inputs
+            # (e.g. qty=1000 is well below training mean of ~2550, combined with
+            # narrow fabric width — both push LR prediction toward zero or below).
+            # Rather than crashing with PredictionError, clamp to a physics-based
+            # floor: the minimum physically plausible fabric consumption is
+            # qty × smallest_garment_base × (160 / widest_fabric) × 0.70 safety margin.
+            if not np.isfinite(prediction_base):
+                raise PredictionError(f"Model returned non-finite prediction: {prediction_base}")
+            if prediction_base <= 0:
+                _garment_base_min = min(AppConfig.GARMENT_BASE_CONSUMPTION_M.values())
+                _width_cm_used    = order_data.get('fabric_width_cm', 160.0)
+                _qty              = order_data.get('order_quantity', 1)
+                _physics_floor    = _qty * _garment_base_min * (160.0 / max(_width_cm_used, 1.0)) * 0.70
+                logger.warning(
+                    f"Model '{model_name}' predicted {prediction_base:.3f} m (≤ 0). "
+                    f"Clamping to physics floor {_physics_floor:.1f} m. "
+                    f"Consider retraining with more data to avoid linear extrapolation errors."
+                )
+                prediction_base = _physics_floor
 
             # Convert to meters first (if needed)
             metadata_unit = self.models.get('metadata', {}).get('unit', 'meters')
@@ -1568,15 +1593,26 @@ class SinglePredictionPage:
                 )
                 fabric_width_cm = UnitConverter.inches_to_cm(fabric_width_in)
             else:
-                fabric_width_cm = st.selectbox(
+                # Show user-friendly rounded labels (140, 150, 160, 180 cm) but
+                # map internally to exact inch-derived values (139.70, 149.86, ...)
+                # so that round-trip back to inches is lossless (55.00", not 55.1").
+                _cm_labels   = list(AppConfig.FABRIC_WIDTHS_CM_DISPLAY.values())  # [140,150,160,180]
+                _cm_exact    = list(AppConfig.FABRIC_WIDTHS_CM_DISPLAY.keys())    # [139.7, 149.86,...]
+                _cm_label_sel = st.selectbox(
                     "Fabric Width (cm)",
-                    AppConfig.FABRIC_WIDTHS_CM,
+                    _cm_labels,
                     key="sp_width_cm"
                 )
-                fabric_width_in = UnitConverter.cm_to_inches(fabric_width_cm)
+                # Map selected display label → exact internal cm value
+                _label_to_exact = dict(zip(_cm_labels, _cm_exact))
+                fabric_width_cm = _label_to_exact.get(_cm_label_sel, _cm_exact[0])
+                fabric_width_in = AppConfig.WIDTH_CM_TO_INCHES.get(
+                    fabric_width_cm, UnitConverter.cm_to_inches(fabric_width_cm)
+                )
 
             if show_dual_units:
-                st.caption(f"= {fabric_width_in:.1f} inches | {fabric_width_cm:.1f} cm")
+                _in_display = int(fabric_width_in) if fabric_width_in == int(fabric_width_in) else round(fabric_width_in, 1)
+                st.caption(f"= {_in_display} inches | {fabric_width_cm:.2f} cm")
 
             pattern_complexity = st.selectbox(
                 "Pattern Complexity",
@@ -1646,8 +1682,15 @@ class SinglePredictionPage:
                 fabric_width_in = st.session_state.get('sp_width_in', AppConfig.FABRIC_WIDTHS_INCHES[0])
                 fabric_width_cm = UnitConverter.inches_to_cm(fabric_width_in)
             else:
-                fabric_width_cm = st.session_state.get('sp_width_cm', AppConfig.FABRIC_WIDTHS_CM[0])
-                fabric_width_in = UnitConverter.cm_to_inches(fabric_width_cm)
+                # sp_width_cm stores the display label (140, 150, 160, 180)
+                _cm_labels  = list(AppConfig.FABRIC_WIDTHS_CM_DISPLAY.values())
+                _cm_exact   = list(AppConfig.FABRIC_WIDTHS_CM_DISPLAY.keys())
+                _label_to_exact = dict(zip(_cm_labels, _cm_exact))
+                _cm_label_stored = st.session_state.get('sp_width_cm', _cm_labels[0])
+                fabric_width_cm = _label_to_exact.get(_cm_label_stored, _cm_exact[0])
+                fabric_width_in = AppConfig.WIDTH_CM_TO_INCHES.get(
+                    fabric_width_cm, UnitConverter.cm_to_inches(fabric_width_cm)
+                )
 
             # Create and validate order input
             order_input = OrderInput(
@@ -1794,9 +1837,49 @@ class SinglePredictionPage:
             )
             st.session_state.total_savings += max(potential_savings, 0.0)
 
+        # ── Model reliability warning ──────────────────────────────────────────
+        # Compute the physics-based expected range (±15% of deterministic estimate)
+        # and warn the user if the prediction falls outside it.
+        _COMPLEXITY_MULT = {"Simple": 1.00, "Medium": 1.15, "Complex": 1.35}
+        _SEASONAL_IMPACT = {"Spring": 0.010, "Summer": -0.008, "Fall": 0.005, "Winter": 0.018}
+        _det_base = (order_input.order_quantity
+                     * garment_base_m_adjusted
+                     * AppConfig.DEFAULT_BOM_BUFFER
+                     * _COMPLEXITY_MULT.get(order_input.pattern_complexity, 1.0)
+                     * (1.0 + _SEASONAL_IMPACT.get(order_input.season, 0.0)))
+        _physics_lo = _det_base * 0.80
+        _physics_hi = _det_base * 1.20
+        _pred_m = (UnitConverter.yards_to_meters(result.prediction)
+                   if unit_pref == 'yards' else result.prediction)
+        if _pred_m < _physics_lo or _pred_m > _physics_hi:
+            _pct_off = (_pred_m / _det_base - 1.0) * 100
+            st.warning(
+                f"⚠️ **Model Reliability Notice** — The **{result.model_name.replace('_',' ').title()}** "
+                f"prediction ({result.prediction:.1f} {unit_pref}) is **{abs(_pct_off):.1f}% "
+                f"{'above' if _pct_off > 0 else 'below'}** the physics-based expected range "
+                f"({_physics_lo:.0f}–{_physics_hi:.0f} m). "
+                f"This model may be overfitting or underfitting on this input. "
+                f"Consider using **Ensemble (Best)** or retraining on the 5,000-row production dataset.",
+                icon="⚠️"
+            )
+
         # Confidence interval chart
         st.markdown("---")
         st.subheader(f"📈 Prediction with 90% Confidence Interval ({unit_pref})")
+
+        # Warn when CI is unrealistically wide (>10% of prediction on either side).
+        # Expected CI widths: Ensemble ±2%, XGBoost ±2.3%, RF ±2.7%, LSTM ±3.1%.
+        # Wide CIs (>10%) indicate the model was trained on too few samples,
+        # or that model_metadata.json stores RMSE values instead of fractional CI bounds.
+        _ci_half_pct = (result.confidence_upper - result.prediction) / max(result.prediction, 1) * 100
+        if _ci_half_pct > 10.0:
+            st.info(
+                f"ℹ️ **Wide Confidence Interval Notice** — The current CI band is ±{_ci_half_pct:.1f}% "
+                f"({result.confidence_lower:.0f}–{result.confidence_upper:.0f} {unit_pref}). "
+                f"Expected range is ±2–4%. This indicates the model was trained on a small dataset "
+                f"(1,000 rows). **Retrain on the 5,000-row production dataset** to reduce uncertainty.",
+                icon="ℹ️"
+            )
 
         fig = go.Figure()
 
@@ -1895,7 +1978,7 @@ class SinglePredictionPage:
                     order_input.pattern_complexity,
                     order_input.season,
                     f"{order_input.order_quantity:,}",
-                    f"{order_input.fabric_width_cm:.1f} cm / {fabric_width_in:.1f} in",
+                    f"{order_input.fabric_width_cm:.2f} cm / {int(fabric_width_in) if fabric_width_in == int(fabric_width_in) else round(fabric_width_in, 1)} in",
                     f"{order_input.marker_efficiency:.1f}%",
                     f"{order_input.defect_rate:.1f}%",
                     f"{order_input.operator_experience} yr(s)",

@@ -1,6 +1,6 @@
 {
   "version": "3.0.0",
-  "training_date": "2026-03-04 21:54:48",
+  "training_date": "2026-03-04 21:56:13",
   "unit": "meters",
   "feature_names": [
     "order_quantity",
@@ -128,42 +128,42 @@
       "file": "lstm_model.h5",
       "type": "tensorflow.keras.Sequential",
       "n_features": 9,
-      "rmse": 900.864,
-      "mae": 641.057,
-      "r2": 0.9684,
-      "mape": 15.5,
+      "rmse": 917.203,
+      "mae": 649.946,
+      "r2": 0.9672,
+      "mape": 15.72,
       "ci_bounds": {
-        "lower_offset_m": -1941.5344882350694,
-        "upper_offset_m": 1191.541228556748,
-        "ci_fraction": 0.2633,
+        "lower_offset_m": -2043.8995106611676,
+        "upper_offset_m": 1084.1872620439142,
+        "ci_fraction": 0.2794,
         "percentile": 90
       },
       "training_history": {
-        "final_train_loss": 2082367.5,
-        "final_val_loss": 827123.5,
+        "final_train_loss": 2272103.0,
+        "final_val_loss": 854065.75,
         "epochs_trained": 50
       },
-      "improvement_vs_bom_pct": -2.8
+      "improvement_vs_bom_pct": -2.9
     },
     "ensemble": {
       "file": "ensemble_model.pkl",
       "type": "WeightedAverageEnsemble",
       "n_features": 9,
-      "rmse": 817.115,
-      "mae": 566.902,
+      "rmse": 816.533,
+      "mae": 562.79,
       "r2": 0.974,
-      "mape": 14.24,
+      "mape": 14.27,
       "ci_bounds": {
-        "lower_offset_m": -1555.2989456456307,
-        "upper_offset_m": 1067.9576927331675,
-        "ci_fraction": 0.2076,
+        "lower_offset_m": -1562.205024291029,
+        "upper_offset_m": 1040.2787784395077,
+        "ci_fraction": 0.2089,
         "percentile": 90
       },
       "weights": {
-        "linear_regression": 0.22890530122156308,
-        "random_forest": 0.2557510314846383,
-        "xgboost": 0.2600907452278091,
-        "lstm": 0.2552529220659896
+        "linear_regression": 0.22896444962355197,
+        "random_forest": 0.25581711673796614,
+        "xgboost": 0.2601579518493693,
+        "lstm": 0.25506048178911256
       },
       "weighted_by": "validation_r2",
       "improvement_vs_bom_pct": -2.2

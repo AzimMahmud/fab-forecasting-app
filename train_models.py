@@ -86,8 +86,8 @@ class TrainingConfig:
 
     # ── Data ────────────────────────────────────────────────────────────────
     DATA_PATH     = Path("generated_data")
-    # Using 5000-row production dataset for training (improved model accuracy)
-    TRAINING_DATA = "production_dataset_5000_orders_meters.csv"
+    # Using 5000-row production dataset for training (yards only)
+    TRAINING_DATA = "production_dataset_5000_orders_yards.csv"
 
     # ── Model output ────────────────────────────────────────────────────────
     MODEL_PATH   = Path("models")
@@ -136,7 +136,7 @@ class TrainingConfig:
     }
 
     # ── Column mapping: raw CSV column → internal name ───────────────────────
-    # NOTE: Keep Actual_Consumption_m last; all others become features.
+    # NOTE: Keep Actual_Consumption_yards last; all others become features.
     COLUMN_MAPPING = {
         "Order_Quantity":            "order_quantity",
         "Fabric_Width_cm":           "fabric_width_cm",
@@ -147,7 +147,7 @@ class TrainingConfig:
         "Fabric_Type":               "fabric_type",
         "Pattern_Complexity":        "pattern_complexity",
         "Season":                    "season",
-        "Actual_Consumption_m":      "fabric_consumption_meters",
+        "Actual_Consumption_yards":  "fabric_consumption_yards",
     }
 
     # ── Feature vector (order must match app.py predict() feature array) ─────
@@ -175,7 +175,7 @@ class TrainingConfig:
         "season_encoded":            "Season",
     }
 
-    TARGET = "fabric_consumption_meters"
+    TARGET = "fabric_consumption_yards"
 
     # ── Categorical encoders ─────────────────────────────────────────────────
     # Lists are sorted alphabetically because sklearn LabelEncoder sorts before
@@ -566,7 +566,7 @@ class ModelTrainer:
                 * df_test_raw["Pattern_Complexity"].map(COMPLEXITY_MULT).astype(float))
 
         y_bom = df_test_raw["Order_Quantity"] * base * gc.BOM_SAFETY_MARGIN
-        y_true = df_test_raw["Actual_Consumption_m"] if "Actual_Consumption_m" in df_test_raw.columns \
+        y_true = df_test_raw["Actual_Consumption_yards"] if "Actual_Consumption_yards" in df_test_raw.columns \
                  else df_test_raw.get(gc.TARGET, None)
         if y_true is None:
             return {}
@@ -667,7 +667,7 @@ class ModelSaver:
         metadata = {
             "version":              "3.0.0",
             "training_date":        training_date,
-            "unit":                 "meters",
+            "unit":                 "yards",
             "feature_names":        features,
             "feature_display_names": TrainingConfig.FEATURE_DISPLAY_NAMES,
             "target":               target,

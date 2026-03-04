@@ -3511,7 +3511,7 @@ def check_and_train_models_if_needed():
     logger.info("🔄 Starting automatic model training...")
 
     # Check if training data exists
-    training_data = Path("generated_data/production_dataset_5000_orders_meters.csv")
+    training_data = Path("generated_data/production_dataset_5000_orders_yards.csv")
 
     # Get current working directory for debugging
     cwd = Path.cwd()
@@ -3527,7 +3527,7 @@ def check_and_train_models_if_needed():
 
 **Details:**
 - Working directory: `{cwd}`
-- Looking for: `generated_data/production_dataset_5000_orders_meters.csv`
+- Looking for: `generated_data/production_dataset_5000_orders_yards.csv`
 - The `generated_data/` folder does not exist
 
 **For Streamlit Cloud deployment:**

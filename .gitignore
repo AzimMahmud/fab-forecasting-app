@@ -102,18 +102,21 @@ logs/
 models/.gitkeep
 
 # Generated Data: Keep production datasets for deployment
-# Only ignore demo/test datasets locally, keep production datasets
+# Only ignore demo/test datasets locally, keep production datasets (yards only)
 generated_data/*demo*.csv
 generated_data/*demo*.txt
-!generated_data/production_*.csv
-!generated_data/production_*.txt
-!generated_data/training_*.csv
-!generated_data/training_*.txt
-!generated_data/batch_prediction_template.csv
 
-# Keep the 10,000-row production datasets for Streamlit Cloud
-!generated_data/*10000*.csv
-!generated_data/*10000*.txt
+# Ignore all meters datasets
+generated_data/*meters*.csv
+generated_data/*meters*.txt
+
+# Keep yards datasets for deployment
+!generated_data/production_*yards*.csv
+!generated_data/production_*yards*.txt
+!generated_data/training_*yards*.csv
+!generated_data/training_*yards*.txt
+!generated_data/demo_*yards*.csv
+!generated_data/batch_prediction_template.csv
 
 # Ignore other CSV/JSON files in root (but allow in generated_data/)
 *.csv

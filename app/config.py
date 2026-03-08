@@ -102,6 +102,10 @@ class AppConfig:
     OPERATOR_EXPERIENCE_MIN = 1      # training: 1–20 yrs (0 is extrapolation)
     OPERATOR_EXPERIENCE_MAX = 20
 
+    # Fabric width validation bounds
+    MIN_FABRIC_WIDTH_CM = 100
+    MAX_FABRIC_WIDTH_CM = 200
+
     # Supported Values (ALIGNED WITH TRAINING MODULE)
     GARMENT_TYPES = ["T-Shirt", "Shirt", "Pants", "Dress", "Jacket"]
     FABRIC_TYPES = ["Cotton", "Polyester", "Cotton-Blend", "Silk", "Denim"]
@@ -216,7 +220,7 @@ class DataLoadError(FabricForecastError):
 
 class ModelType(Enum):
     """Available ML model types"""
-    ENSAMBLE = "ensamble"
+    ENSEMBLE = "ensemble"
     LINEAR_REGRESSION = "linear_regression"
     RANDOM_FOREST = "random_forest"
     XGBOOST = "xgboost"
@@ -315,8 +319,11 @@ class OrderInput:
         if self.fabric_type not in AppConfig.FABRIC_TYPES:
             errors.append(f"Fabric type must be one of {AppConfig.FABRIC_TYPES}")
 
-        if not (100 <= self.fabric_width_cm <= 200):
-            errors.append("Fabric width must be between 100 and 200 cm")
+        if not (AppConfig.MIN_FABRIC_WIDTH_CM <= self.fabric_width_cm <= AppConfig.MAX_FABRIC_WIDTH_CM):
+            errors.append(
+                f"Fabric width must be between {AppConfig.MIN_FABRIC_WIDTH_CM} "
+                f"and {AppConfig.MAX_FABRIC_WIDTH_CM} cm"
+            )
 
         # Quality validation
         quality_levels = ["Standard", "Premium", "Premium Plus"]
@@ -328,6 +335,18 @@ class OrderInput:
         light_colors = ["White", "Beige", "Light Gray", "Pastel"]
         if self.color not in dark_colors + light_colors:
             errors.append(f"Color must be one of {dark_colors + light_colors}")
+
+        # Size distribution validation
+        if self.size_distribution is not None:
+            if not isinstance(self.size_distribution, dict):
+                errors.append("Size distribution must be a dictionary")
+            else:
+                valid_sizes = ["XS", "S", "M", "L", "XL", "XXL", "XXXL"]
+                for size, count in self.size_distribution.items():
+                    if size not in valid_sizes:
+                        errors.append(f"Invalid size '{size}' in size distribution")
+                    elif not isinstance(count, int) or count < 0:
+                        errors.append(f"Invalid count '{count}' for size '{size}' - must be non-negative integer")
 
         if errors:
             raise ValidationError("; ".join(errors))
@@ -373,7 +392,7 @@ class EncodingMaps:
 
     # Human-readable model names → internal model keys
     MODEL_DISPLAY = {
-        'Ensemble (Best)':     ModelType.ENSAMBLE.value,
+        'Ensemble (Best)':     ModelType.ENSEMBLE.value,
         'XGBoost':             ModelType.XGBOOST.value,
         'Random Forest':       ModelType.RANDOM_FOREST.value,
         'LSTM Neural Network': ModelType.LSTM.value,

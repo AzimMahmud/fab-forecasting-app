@@ -252,6 +252,7 @@ class ModelManager:
         self.model_metadata: Dict[str, Any] = {}
         self._load_attempted = False
         self.lstm_available = False
+        self.mode = "ensemble"  # Default processing mode
 
         # Check TensorFlow availability conditionally
         if AppConfig.ENABLE_LSTM:

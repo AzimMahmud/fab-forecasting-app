@@ -887,7 +887,7 @@ class UIHelpers:
         st.markdown(custom_css, unsafe_allow_html=True)
 
     @staticmethod
-    def render_footer():
+    def render_footer(model_manager=None):
         """Render application footer with copyright and version info."""
         import streamlit as st
         from app.config import AppConfig

@@ -561,6 +561,27 @@ class ModelManager:
         """
         return model_name in self.models and self.models[model_name] is not None
 
+    def get_model_metrics(self) -> Dict[str, Any]:
+        """
+        Get performance metrics for all loaded models.
+
+        Returns:
+            Dictionary with model names as keys and metrics as values
+        """
+        metrics = {}
+        for model_name, model in self.models.items():
+            if hasattr(model, 'score_'):
+                metrics[model_name] = {
+                    'r2_score': getattr(model, 'score_', None),
+                    'loaded': True
+                }
+            else:
+                metrics[model_name] = {
+                    'r2_score': None,
+                    'loaded': True
+                }
+        return metrics
+
 
 class DataGenerator:
     """
@@ -864,3 +885,19 @@ class UIHelpers:
         """
 
         st.markdown(custom_css, unsafe_allow_html=True)
+
+    @staticmethod
+    def render_footer():
+        """Render application footer with copyright and version info."""
+        import streamlit as st
+        from app.config import AppConfig
+
+        st.markdown("---")
+        st.markdown(
+            f"""
+            <div style='text-align: center; color: gray; font-size: 0.8rem;'>
+                © 2026 {AppConfig.APP_AUTHOR}. {AppConfig.APP_NAME} v{AppConfig.APP_VERSION}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )

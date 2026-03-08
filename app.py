@@ -223,48 +223,90 @@ class SinglePredictionPage:
 class BatchPredictionPage:
     @staticmethod
     def render(model_manager: ModelManager):
-        """Render batch prediction page"""
-        st.header("📊 Batch Prediction")
+        """Render batch prediction page."""
+        import streamlit as st
+        from app.ui_notifications import show_success, show_error, show_warning
+
+        st.header("📦 Batch Prediction")
+        st.markdown("Upload a CSV file with multiple orders to generate predictions.")
 
         # File upload
-        uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+        uploaded_file = st.file_uploader(
+            "Choose a CSV file",
+            type=["csv"],
+            help="Upload a CSV file with columns: Order_ID, Garment_Type, Fabric_Width_CM, Fabric_Type, Order_Quantity, Quality_Level, Color"
+        )
 
         if uploaded_file is not None:
             try:
+                # Read CSV
                 df = pd.read_csv(uploaded_file)
 
-                # Validate required columns
-                required_columns = ["Order_Quantity", "Fabric_Width_cm", "Marker_Efficiency_%",
-                                 "Expected_Defect_Rate_%", "Operator_Experience_Years",
-                                 "Garment_Type", "Fabric_Type", "Pattern_Complexity", "Season"]
-
+                # Validate columns
+                required_columns = ['Order_ID', 'Garment_Type', 'Fabric_Width_CM',
+                                  'Fabric_Type', 'Order_Quantity', 'Quality_Level', 'Color']
                 missing_columns = [col for col in required_columns if col not in df.columns]
 
                 if missing_columns:
-                    st.error(f"Missing required columns: {', '.join(missing_columns)}")
-                else:
-                    # Process batch
-                    with st.spinner("Processing batch predictions..."):
-                        results = model_manager.predict_batch(df)
+                    show_error(f"Missing required columns: {', '.join(missing_columns)}")
+                    return
 
-                    # Display results
-                    st.success(f"✅ Processed {len(results)} predictions")
+                # Show data preview
+                st.subheader("Data Preview")
+                st.dataframe(df.head(10))
 
-                    # Show sample results
-                    result_df = pd.DataFrame(results[:10])  # Show first 10
-                    st.dataframe(result_df)
+                # Show file info
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Rows", len(df))
+                with col2:
+                    st.metric("Columns", len(df.columns))
+                with col3:
+                    st.metric("File Size", f"{uploaded_file.size / 1024:.1f} KB")
 
-                    # Download button
-                    csv = result_df.to_csv(index=False)
-                    st.download_button(
-                        label="Download Results",
-                        data=csv,
-                        file_name="batch_predictions.csv",
-                        mime="text/csv"
-                    )
+                # Generate predictions button
+                if st.button("Generate Predictions", type="primary"):
+                    with st.spinner("Processing predictions..."):
+                        try:
+                            # Generate predictions
+                            results = model_manager.predict_batch(df)
+
+                            # Add predictions to dataframe
+                            df['Predicted_Yards'] = [r.predicted_yards for r in results]
+                            df['Predicted_Meters'] = [r.predicted_meters for r in results]
+                            df['Model_Used'] = [r.model_used for r in results]
+                            df['Confidence'] = [r.confidence_score for r in results]
+
+                            # Show results
+                            st.subheader("Prediction Results")
+                            st.dataframe(df)
+
+                            # Summary statistics
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Total Orders", len(df))
+                            with col2:
+                                st.metric("Total Yards", f"{df['Predicted_Yards'].sum():.2f}")
+                            with col3:
+                                st.metric("Avg Confidence", f"{df['Confidence'].mean():.1%}")
+
+                            # Export button
+                            csv = df.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Download Results as CSV",
+                                data=csv,
+                                file_name="predictions.csv",
+                                mime="text/csv"
+                            )
+                            show_success(f"Successfully processed {len(df)} orders!")
+
+                        except Exception as e:
+                            show_error(f"Prediction failed: {str(e)}")
+                            logger.error(f"Batch prediction error: {e}", exc_info=True)
 
             except Exception as e:
-                st.error(f"❌ Error processing file: {e}")
+                show_error(f"Error reading file: {str(e)}")
+                logger.error(f"File read error: {e}", exc_info=True)
 
 class PerformancePage:
     @staticmethod

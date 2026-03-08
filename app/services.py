@@ -24,8 +24,8 @@ try:
 except ImportError:
     st = None
 
-# Initialize logger
-logger = logging.getLogger(AppConfig.APP_NAME)
+# Initialize logger (will be configured later)
+logger = logging.getLogger('fabric-forecast-app')
 
 # Conditional imports for models
 try:
@@ -840,3 +840,21 @@ class UIHelpers:
             st.error(f"❌ System Health: {message}")
         else:
             st.info(f"ℹ️ System Health: {message}")
+
+    @staticmethod
+    def apply_custom_styles():
+        """Apply custom CSS styles to the Streamlit application."""
+        import streamlit as st
+
+        custom_css = """
+        <style>
+            /* Your custom CSS styles here */
+            .main-header {
+                font-size: 2rem;
+                font-weight: bold;
+                color: #1f77b4;
+            }
+        </style>
+        """
+
+        st.markdown(custom_css, unsafe_allow_html=True)

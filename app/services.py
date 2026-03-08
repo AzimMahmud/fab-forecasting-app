@@ -691,6 +691,11 @@ class SessionManager:
                 logger.debug(f"Initialized session state: {key}")
 
     @staticmethod
+    def initialize():
+        """Initialize session state variables (alias for initialize_session)."""
+        SessionManager.initialize_session()
+
+    @staticmethod
     def update_activity() -> None:
         """
         Update last activity timestamp.

@@ -47,8 +47,7 @@ class UnitConverter:
         UnitType.CENTIMETERS: 1.09361 / 100
     }
 
-    YARDS_TO_METERS = 0.9144
-    METERS_TO_YARDS = 1.0936132983
+    INCHES_TO_CM = 2.54
 
     @staticmethod
     def convert_to_yards(value: float, from_unit: UnitType) -> float:
@@ -113,26 +112,7 @@ class UnitConverter:
         yards_value = UnitConverter.convert_to_yards(value, from_unit)
         return UnitConverter.convert_from_yards(yards_value, to_unit)
 
-    @staticmethod
-    def yards_to_meters(yards: float) -> float:
-        """Convert yards to meters"""
-        return yards * UnitConverter.YARDS_TO_METERS
-
-    @staticmethod
-    def meters_to_yards(meters: float) -> float:
-        """Convert meters to yards"""
-        return meters * UnitConverter.METERS_TO_YARDS
-
-    @staticmethod
-    def inches_to_cm(inches: float) -> float:
-        """Convert inches to centimeters"""
-        return inches * 2.54
-
-    @staticmethod
-    def cm_to_inches(cm: float) -> float:
-        """Convert centimeters to inches"""
-        return cm / 2.54
-
+    
     @staticmethod
     def format_display(value: float, unit: str, decimals: int = 2) -> str:
         """Format value with unit for display"""

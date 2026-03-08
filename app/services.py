@@ -9,10 +9,10 @@ Developer: Azim Mahmud | Version 3.1.0
 
 import logging
 import typing
-import datetime
 import pathlib
 import os
 import json
+from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
 
 import numpy as np
@@ -347,7 +347,7 @@ class ModelManager:
                 loaded_models['metadata'] = {
                     'version': '3.0.0',
                     'unit': 'yards',
-                    'training_date': datetime.datetime.now().isoformat(),
+                    'training_date': datetime.now().isoformat(),
                     'tensorflow_available': self.lstm_available
                 }
                 logger.warning("Metadata file not found, using default metadata")
@@ -399,7 +399,7 @@ class ModelManager:
                 confidence_lower=prediction_yd * (1 - confidence),
                 confidence_upper=prediction_yd * (1 + confidence),
                 model_name=model_type,
-                timestamp=datetime.datetime.now()
+                timestamp=datetime.now()
             )
 
         except PredictionError:
@@ -679,8 +679,8 @@ class SessionManager:
         defaults = {
             'predictions_count': 0,
             'total_savings': 0.0,
-            'session_start': datetime.datetime.now(),
-            'last_activity': datetime.datetime.now(),
+            'session_start': datetime.now(),
+            'last_activity': datetime.now(),
             'prediction_history': [],
             'page_history': []
         }
@@ -703,7 +703,7 @@ class SessionManager:
         Args:
             None
         """
-        st.session_state.last_activity = datetime.datetime.now()
+        st.session_state.last_activity = datetime.now()
 
     @staticmethod
     def is_session_valid() -> bool:
@@ -747,7 +747,7 @@ class SessionManager:
             'predictions_count': st.session_state.get('predictions_count', 0),
             'total_savings': st.session_state.get('total_savings', 0.0),
             'session_duration': (
-                datetime.datetime.now() - st.session_state.get('session_start', datetime.datetime.now())
+                datetime.now() - st.session_state.get('session_start', datetime.now())
             ).total_seconds() / 60,
             'current_unit': 'yards'
         }

@@ -18,6 +18,9 @@ from typing import Optional, Dict, Any, Tuple
 import numpy as np
 import pandas as pd
 
+# Initialize logger
+logger = logging.getLogger(AppConfig.APP_NAME)
+
 # Conditional imports for models
 try:
     import joblib
@@ -38,9 +41,6 @@ from app.config import (
     ValidationError,
     DataLoadError
 )
-
-# Initialize logger
-logger = logging.getLogger(AppConfig.APP_NAME)
 
 
 class UnitConverter:

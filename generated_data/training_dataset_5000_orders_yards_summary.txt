@@ -1,0 +1,51 @@
+FABRIC CONSUMPTION DATASET -- SUMMARY STATISTICS
+========================================================
+
+Dataset Overview
+----------------------------------------
+  Total orders     : 5,000
+  Date range       : 2022-01-01 -> 2024-09-26
+  Measurement unit : yards
+
+Consumption Statistics (yards)
+----------------------------------------
+  Avg Planned BOM        :    8449.11 yd
+  Avg Actual Consumption :    8287.99 yd
+  Avg Variance           :    -161.12 yd
+  Avg Variance %%         :      -0.65 %%
+  Std Dev Variance %%     :       4.69 %%
+
+Economic Impact
+----------------------------------------
+  Total Planned Cost : $436,916,953.90
+  Total Actual Cost  : $428,703,762.01
+  Total Waste Cost   : $  4,127,823.81
+  Avg Waste / Order  : $        825.56
+
+Variance Distribution
+----------------------------------------
+  Over-consumption  : 42.0 %%
+  Under-consumption : 58.0 %%
+
+Garment Mix
+----------------------------------------
+  Shirt        : 1,057 (21.1 %%)
+  T-Shirt      : 1,034 (20.7 %%)
+  Jacket       : 991 (19.8 %%)
+  Pants        : 964 (19.3 %%)
+  Dress        : 954 (19.1 %%)
+
+Fabric Mix
+----------------------------------------
+  Denim          : 1,038 (20.8 %%)
+  Silk           : 1,034 (20.7 %%)
+  Polyester      : 1,017 (20.3 %%)
+  Cotton         : 957 (19.1 %%)
+  Cotton-Blend   : 954 (19.1 %%)
+
+Season Mix
+----------------------------------------
+  Fall     : 1,296 (25.9 %%)
+  Winter   : 1,286 (25.7 %%)
+  Spring   : 1,220 (24.4 %%)
+  Summer   : 1,198 (24.0 %%)

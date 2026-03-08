@@ -1,50 +1,35 @@
 """
-================================================================================
-                    FABRIC CONSUMPTION FORECASTING SYSTEM
-                         DATA GENERATION SCRIPT
-================================================================================
+FABRIC CONSUMPTION DATA GENERATOR
+==================================
 
-Generates realistic synthetic fabric consumption datasets for ML training.
+Generates a 5,000-order dataset for ML training with yards as the sole
+unit of measurement (no meters output columns).
 
-Key improvements in v3.0:
-- Single 2% noise term replaces 7 compounded noise sources (was ~7% variance)
-- Strong deterministic feature signals — each input has clear measurable impact
-- Season added as encoded feature (consistent with train_models.py and app.py)
-- Operator experience range aligned with app.py UI (1–20 years)
-- Defect rate clipped to 0–10% (consistent with training domain)
-- Marker efficiency clipped to 70–95% (consistent with training domain)
-- Author and version corrected
-- Interaction term columns labelled as exploratory-only (not ML features)
+Changes vs v2.0:
+  - 5,000 orders (was split across 100/1000 demo runs)
+  - Yards-only UOM -- all consumption, BOM and cost columns are in yards
+  - Season feature included and label-encoded for direct ML use
+  - Single primary output: training_dataset_5000_orders_yards.csv
+  - Batch prediction template updated to yards column naming
 
-Author:         Azim Mahmud
-Date:           January 2026
-Version:        3.0.0
-Thesis:         Optimizing Material Forecasting in Apparel Manufacturing
-                Using Machine Learning
-================================================================================
+Developer: Azim Mahmud
+Version:   3.0.0
+Date:      January 2026
 """
 
+import os
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import os
-import json
-
 
 # ============================================================================
 # CONSTANTS
 # ============================================================================
 
-RANDOM_SEED = 42
+METERS_TO_YARDS = 1.0936132983   # exact ISO ratio
 
-GARMENT_TYPES    = ["T-Shirt", "Shirt", "Pants", "Dress", "Jacket"]
-FABRIC_TYPES     = ["Cotton", "Polyester", "Cotton-Blend", "Silk", "Denim"]
-COMPLEXITIES     = ["Simple", "Medium", "Complex"]
-SEASONS          = ["Spring", "Summer", "Fall", "Winter"]
-PRODUCTION_LINES = ["Line_A", "Line_B", "Line_C", "Line_D"]
-
-# Base fabric consumption per unit (meters) at standard 160 cm width.
-# Garment-specific values — must match AppConfig.GARMENT_BASE_CONSUMPTION_M in app.py.
+# Base garment consumption per unit at standard 160 cm fabric width (meters).
+# Physics stays in meters; all dataset output columns are yards.
 BASE_CONSUMPTION_M = {
     "T-Shirt": 1.20,
     "Shirt":   1.80,
@@ -54,414 +39,323 @@ BASE_CONSUMPTION_M = {
 }
 
 FABRIC_COST_PER_M = {
-    "Cotton":       8.5,
-    "Polyester":    6.2,
-    "Cotton-Blend": 7.0,
-    "Silk":        25.0,
-    "Denim":        9.5,
+    "Cotton":       8.50,
+    "Polyester":    6.20,
+    "Cotton-Blend": 7.00,
+    "Silk":        25.00,
+    "Denim":        9.50,
 }
 
-# Clearly separated complexity multipliers so ML can learn the signal.
-COMPLEXITY_MULT = {
+COMPLEXITY_MULTIPLIER = {
     "Simple":  1.00,
     "Medium":  1.15,
     "Complex": 1.35,
 }
 
-# Seasonal impact on consumption (small but real).
-# Season IS a training feature — season_encoded is added to every CSV row.
 SEASONAL_IMPACT = {
-    "Spring":  0.010,
-    "Summer": -0.008,
-    "Fall":    0.005,
-    "Winter":  0.018,
+    "Spring":  0.02,
+    "Summer": -0.01,
+    "Fall":    0.01,
+    "Winter":  0.03,
 }
 
-# Alphabetical encoding — must match sklearn LabelEncoder output in train_models.py.
-# LabelEncoder.fit(["Spring","Summer","Fall","Winter"]) sorts → Fall=0, Spring=1, Summer=2, Winter=3
-SEASON_ENCODING = {
-    "Fall":   0,
-    "Spring": 1,
-    "Summer": 2,
-    "Winter": 3,
-}
+# Alphabetical label-encoder mappings -- must stay in sync with
+# EncodingMaps in app.py and TrainingConfig.CATEGORICAL_FEATURES in train_models.py
+GARMENT_ENCODING = {"Dress": 0, "Jacket": 1, "Pants": 2, "Shirt": 3, "T-Shirt": 4}
+FABRIC_ENCODING  = {"Cotton": 0, "Cotton-Blend": 1, "Denim": 2, "Polyester": 3, "Silk": 4}
+COMPLEX_ENCODING = {"Complex": 0, "Medium": 1, "Simple": 2}
+SEASON_ENCODING  = {"Fall": 0, "Spring": 1, "Summer": 2, "Winter": 3}
 
-STANDARD_WIDTH_CM = 160.0
-BOM_SAFETY_MARGIN = 1.05
+RANDOM_SEED = 42
 
 
 # ============================================================================
-# UNIT CONVERTER
-# ============================================================================
-
-class UnitConverter:
-    YARDS_TO_METERS = 0.9144
-    METERS_TO_YARDS = 1.0936132983
-
-    @staticmethod
-    def yards_to_meters(yards):
-        return yards * UnitConverter.YARDS_TO_METERS
-
-    @staticmethod
-    def meters_to_yards(meters):
-        return meters * UnitConverter.METERS_TO_YARDS
-
-    @staticmethod
-    def inches_to_cm(inches):
-        return inches * 2.54
-
-    @staticmethod
-    def cm_to_inches(cm):
-        return cm / 2.54
-
-
-# ============================================================================
-# DATA GENERATOR
+# GENERATOR CLASS
 # ============================================================================
 
 class FabricDataGenerator:
-    """
-    Generate realistic fabric consumption datasets for ML training.
+    """Generate realistic fabric consumption data -- yards output."""
 
-    Signal design (v3.0.0)
-    --------------------
-    v2.0.0 problem : 7 independent noise sources compounded to ~7% variance.
-                   Even a perfect model could only reach ~5.5% MAPE.
-    v3.0.0 solution: One deterministic signal layer (learnable) + one 2% noise
-                   term (irreducible). Expected Ensemble MAPE: 2–4%.
-
-    Feature → target relationships (all learnable by ML):
-        garment_type        — base per-unit consumption (1.2m – 3.5m)
-        fabric_width_cm     — width scaling factor vs 160 cm standard
-        pattern_complexity  — multiplier 1.00 / 1.15 / 1.35
-        marker_efficiency   — ±5% efficiency impact
-        defect_rate         — 0–10% additional material needed
-        operator_experience — exponential decay (new operators waste ~4% more)
-        season              — ±1–2% seasonal adjustment
-        order_quantity      — economy of scale (−3% log-scale reduction)
-
-    Single irreducible noise: N(0, 2%) applied once after all deterministic
-    factors. This sets the theoretical MAPE floor at ~1.6%.
-    """
-
-    def __init__(self, random_seed=RANDOM_SEED):
-        self.rng = np.random.default_rng(random_seed)
+    def __init__(self, random_seed: int = RANDOM_SEED):
+        np.random.seed(random_seed)
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def generate_dataset(self, n_samples=5000, start_date="2023-01-01",
-                         unit="meters", include_both_units=True,
-                         noise_std=0.020):
+    def generate_dataset(self, n_samples: int = 5000,
+                         start_date: str = "2022-01-01") -> pd.DataFrame:
         """
-        Generate a complete fabric consumption dataset.
+        Generate a complete yards-based fabric consumption dataset.
 
         Parameters
         ----------
-        n_samples        : number of orders to generate
-        start_date       : first order date (YYYY-MM-DD)
-        unit             : primary measurement unit ('meters' or 'yards')
-        include_both_units : include both _m and _yards columns in output
-        noise_std        : std-dev of irreducible operational noise (default 2%)
+        n_samples : int
+            Number of orders to generate (default 5,000).
+        start_date : str
+            ISO date for the first order (default '2022-01-01').
+
+        Returns
+        -------
+        pd.DataFrame
         """
-        print(f"  Generating {n_samples} orders | unit={unit} | noise={noise_std*100:.1f}%")
-
-        df = self._generate_base_features(n_samples, start_date)
-        df = self._calculate_consumption(df, noise_std)
-        df = self._add_unit_columns(df, unit, include_both_units)
+        print(f"  Generating {n_samples:,} orders ...")
+        df = self._generate_base_data(n_samples, start_date)
+        df = self._calculate_consumption_yards(df)
         df = self._add_derived_features(df)
-
-        avg_var = df["Variance_%"].abs().mean()
-        cv = df["Actual_Consumption_m"].std() / df["Actual_Consumption_m"].mean()
-        print(f"    QA => avg|variance|={avg_var:.2f}%  CV={cv:.3f}  rows={len(df)}")
-
+        df = self._add_encoded_columns(df)
+        print(f"  [OK] {len(df):,} rows, {len(df.columns)} columns  |  unit: yards")
         return df
 
     # ------------------------------------------------------------------
-    # Private helpers
+    # Internal helpers
     # ------------------------------------------------------------------
 
-    def _generate_base_features(self, n, start_date):
+    def _generate_base_data(self, n: int, start_date: str) -> pd.DataFrame:
         start = pd.to_datetime(start_date)
-
-        garment_type    = self.rng.choice(GARMENT_TYPES, n)
-        fabric_type     = self.rng.choice(FABRIC_TYPES, n)
-        pattern_complex = self.rng.choice(COMPLEXITIES, n)
-        season          = self.rng.choice(SEASONS, n)
-        prod_line       = self.rng.choice(PRODUCTION_LINES, n)
-        width_inches    = self.rng.choice([55, 59, 63, 71], n)
-
         return pd.DataFrame({
-            "Order_ID":   [f"ORD_{i:06d}" for i in range(1, n + 1)],
-            "Order_Date": [start + timedelta(days=int(i / 5)) for i in range(n)],
+            "Order_ID":
+                [f"ORD_{str(i).zfill(6)}" for i in range(1, n + 1)],
+            "Order_Date":
+                [start + timedelta(days=int(i / 5)) for i in range(n)],
+            "Order_Quantity":
+                np.random.randint(100, 5001, n),
+            "Garment_Type":
+                np.random.choice(list(BASE_CONSUMPTION_M), n),
+            "Fabric_Type":
+                np.random.choice(list(FABRIC_COST_PER_M), n),
+            "Fabric_Width_inches":
+                np.random.choice([55, 59, 63, 71], n),
+            "Pattern_Complexity":
+                np.random.choice(list(COMPLEXITY_MULTIPLIER), n),
+            "Season":
+                np.random.choice(list(SEASONAL_IMPACT), n),
+            "Supplier_ID":
+                np.random.choice([f"SUP_{i}" for i in range(1, 11)], n),
+            "Production_Line":
+                np.random.choice(["Line_A", "Line_B", "Line_C", "Line_D"], n),
+            "Operator_Experience_Years":
+                np.random.randint(1, 21, n),          # 1-20 inclusive
+            "Fabric_GSM":
+                np.random.normal(180, 30, n).clip(100, 300),
+            "Marker_Efficiency_%":
+                np.random.normal(85, 5, n).clip(70, 95),
+            "Expected_Defect_Rate_%":
+                np.random.exponential(2, n).clip(0, 10),
+        }).assign(Fabric_Width_cm=lambda d: d["Fabric_Width_inches"] * 2.54)
 
-            # ── 8 ML features (must match TrainingConfig.FEATURES in train_models.py) ──
-            "Order_Quantity":            self.rng.integers(100, 5001, n),
-            "Garment_Type":              garment_type,
-            "Fabric_Type":               fabric_type,
-            "Fabric_Width_inches":       width_inches,
-            "Fabric_Width_cm":           (width_inches * 2.54).astype(float),
-            "Pattern_Complexity":        pattern_complex,
-            "Marker_Efficiency_%":       self.rng.normal(85.0, 4.0, n).clip(70, 95),
-            "Expected_Defect_Rate_%":    self.rng.exponential(1.8, n).clip(0.0, 10.0),
-            "Operator_Experience_Years": self.rng.integers(1, 21, n),    # 1–20 (UI max=20)
-            "Season":                    season,
+    def _calculate_consumption_yards(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Physics-based consumption model -- all outputs in yards."""
+        # 1. Garment base at standard 160 cm width
+        base_m = df["Garment_Type"].map(BASE_CONSUMPTION_M)
 
-            # ── Context columns (not ML features — excluded from TrainingConfig.FEATURES) ──
-            # Production_Line, Supplier_ID, and Fabric_GSM are operational metadata.
-            # They are retained in the CSV for analysis but are NOT passed to model training.
-            "Supplier_ID":     self.rng.choice([f"SUP_{i}" for i in range(1, 11)], n),
-            "Production_Line": prod_line,
-            "Fabric_GSM":      self.rng.normal(180, 25, n).clip(100, 300),
-        })
+        # 2. Fabric-width adjustment  (wider -> less fabric per unit)
+        base_m = base_m * (160.0 / df["Fabric_Width_cm"])
 
-    def _calculate_consumption(self, df, noise_std):
-        """
-        Compute planned BOM and actual consumption.
+        # 3. Pattern complexity
+        base_m = base_m * df["Pattern_Complexity"].map(COMPLEXITY_MULTIPLIER)
 
-        Signal layer (deterministic, fully learnable):
-            actual = planned_BOM
-                     × efficiency_factor      (±5%)
-                     × defect_factor          (0–10%)
-                     × experience_factor      (0–4%)
-                     × seasonal_factor        (±1–2%)
-                     × economy_factor         (0–3% size reduction)
-                     × (1 + ε)               ← single noise N(0, noise_std)
+        # 4. Planned BOM with 5 % safety margin
+        planned_m = df["Order_Quantity"] * base_m * 1.05
 
-        Physical clip: ±15% of planned BOM.
-        """
-        n = len(df)
-
-        # Base consumption per unit adjusted for width and complexity
-        base = df["Garment_Type"].map(BASE_CONSUMPTION_M).astype(float)
-        base *= (STANDARD_WIDTH_CM / df["Fabric_Width_cm"])
-        base *= df["Pattern_Complexity"].map(COMPLEXITY_MULT).astype(float)
-        df["Base_Consumption_Per_Unit_m"] = base
-
-        # Traditional planned BOM (industry rule: qty × garment_base × 1.05 buffer)
-        df["Planned_BOM_m"] = df["Order_Quantity"] * base * BOM_SAFETY_MARGIN
-
-        # ── Deterministic adjustment factors ──────────────────────────────────
-        # 1. Marker efficiency: +1% efficiency → -0.4% consumption
-        efficiency_factor = 1.0 - (df["Marker_Efficiency_%"] - 85.0) / 100.0 * 0.40
-
-        # 2. Defect rate: each 1% defect → 1% extra material needed
-        defect_factor = 1.0 + df["Expected_Defect_Rate_%"] / 100.0
-
-        # 3. Operator experience: new operators waste ~4% more, decays with experience
-        exp_factor = 1.0 + np.exp(-df["Operator_Experience_Years"] / 15.0) * 0.04
-
-        # 4. Seasonal variation (small but real; Season IS a training feature)
-        seasonal_factor = 1.0 + df["Season"].map(SEASONAL_IMPACT).astype(float)
-
-        # 5. Order size economy of scale (larger orders → marginally less waste)
-        size_factor = 1.0 - 0.03 * np.log1p(df["Order_Quantity"] / 1000.0)
-
-        # ── Single irreducible noise term ──────────────────────────────────────
-        noise = self.rng.normal(0.0, noise_std, n)
+        # -- Variance factors ------------------------------------------
+        f_quality = np.random.normal(0, 0.02, len(df))          # ?2 %
+        f_eff     = 1.0 - (df["Marker_Efficiency_%"] - 85) / 100 * 0.40
+        f_defect  = 1.0 + df["Expected_Defect_Rate_%"] / 100
+        f_exp     = 1.0 + np.exp(-df["Operator_Experience_Years"] / 15.0) * 0.04
+        f_season  = 1.0 + df["Season"].map(SEASONAL_IMPACT)
+        f_size    = 1.0 - 0.05 * np.log(df["Order_Quantity"] / 1000.0 + 1)
+        f_noise   = np.random.normal(0, 0.015, len(df))         # ?1.5 %
 
         actual_m = (
-            df["Planned_BOM_m"]
-            * efficiency_factor
-            * defect_factor
-            * exp_factor
-            * seasonal_factor
-            * size_factor
-            * (1.0 + noise)
-        )
+            planned_m * (1 + f_quality) * f_eff * f_defect
+            * f_exp * f_season * f_size * (1 + f_noise)
+        ).clip(lower=planned_m * 0.80, upper=planned_m * 1.30)
 
-        # Physical sanity clip: ±15% of planned BOM
-        df["Actual_Consumption_m"] = actual_m.clip(
-            lower=df["Planned_BOM_m"] * 0.85,
-            upper=df["Planned_BOM_m"] * 1.15,
+        # -- Convert to yards ------------------------------------------
+        df["Base_Consumption_Per_Unit_yards"] = base_m    * METERS_TO_YARDS
+        df["Planned_BOM_yards"]               = planned_m * METERS_TO_YARDS
+        df["Actual_Consumption_yards"]         = actual_m  * METERS_TO_YARDS
+
+        df["Variance_yards"] = (
+            df["Actual_Consumption_yards"] - df["Planned_BOM_yards"]
         )
+        df["Variance_%"] = (
+            df["Variance_yards"] / df["Planned_BOM_yards"] * 100
+        )
+        df["Measurement_Unit"] = "yards"
         return df
 
-    def _add_unit_columns(self, df, unit, include_both):
-        m2y = UnitConverter.METERS_TO_YARDS
-
-        df["Planned_BOM_yards"]               = df["Planned_BOM_m"]               * m2y
-        df["Actual_Consumption_yards"]         = df["Actual_Consumption_m"]         * m2y
-        df["Base_Consumption_Per_Unit_yards"]  = df["Base_Consumption_Per_Unit_m"]  * m2y
-
-        if unit.lower() == "yards":
-            df["Planned_BOM"]               = df["Planned_BOM_yards"]
-            df["Actual_Consumption"]        = df["Actual_Consumption_yards"]
-            df["Base_Consumption_Per_Unit"] = df["Base_Consumption_Per_Unit_yards"]
-            df["Measurement_Unit"]          = "yards"
-        else:
-            df["Planned_BOM"]               = df["Planned_BOM_m"]
-            df["Actual_Consumption"]        = df["Actual_Consumption_m"]
-            df["Base_Consumption_Per_Unit"] = df["Base_Consumption_Per_Unit_m"]
-            df["Measurement_Unit"]          = "meters"
-
-        df["Variance_m"]     = df["Actual_Consumption_m"]     - df["Planned_BOM_m"]
-        df["Variance_yards"] = df["Actual_Consumption_yards"] - df["Planned_BOM_yards"]
-        df["Variance_%"]     = (df["Variance_m"] / df["Planned_BOM_m"]) * 100
-
-        return df
-
-    def _add_derived_features(self, df):
-        # Season encoded (alphabetical = sklearn LabelEncoder order).
-        # Fall=0, Spring=1, Summer=2, Winter=3
-        df["season_encoded"] = df["Season"].map(SEASON_ENCODING).astype(int)
-
+    def _add_derived_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Economic and interaction features -- yards-denominated."""
         df["Order_Size_Category"] = pd.cut(
             df["Order_Quantity"],
-            bins=[0, 500, 1500, 3000, 10_000],
+            bins=[0, 500, 1500, 3000, 10001],
             labels=["Small", "Medium", "Large", "XLarge"],
         )
+        # Cost per yard = cost_per_meter / meters_per_yard
+        df["Fabric_Cost_Per_yard"] = (
+            df["Fabric_Type"].map(FABRIC_COST_PER_M) / METERS_TO_YARDS
+        )
+        df["Planned_Cost_USD"]      = df["Planned_BOM_yards"]        * df["Fabric_Cost_Per_yard"]
+        df["Actual_Cost_USD"]       = df["Actual_Consumption_yards"]  * df["Fabric_Cost_Per_yard"]
+        df["Waste_Cost_USD"]        = df["Variance_yards"].clip(lower=0) * df["Fabric_Cost_Per_yard"]
+        df["Savings_Potential_USD"] = df["Variance_yards"].abs()         * df["Fabric_Cost_Per_yard"]
 
-        df["Fabric_Cost_Per_m"]    = df["Fabric_Type"].map(FABRIC_COST_PER_M)
-        df["Fabric_Cost_Per_yard"] = df["Fabric_Cost_Per_m"] * UnitConverter.METERS_TO_YARDS
-
-        df["Planned_Cost_USD"]      = df["Planned_BOM_m"]        * df["Fabric_Cost_Per_m"]
-        df["Actual_Cost_USD"]       = df["Actual_Consumption_m"] * df["Fabric_Cost_Per_m"]
-        df["Waste_Cost_USD"]        = df["Variance_m"].clip(lower=0) * df["Fabric_Cost_Per_m"]
-        df["Savings_Potential_USD"] = df["Variance_m"].abs()          * df["Fabric_Cost_Per_m"]
-
-        # NOTE: The following interaction terms are included for exploratory
-        # analysis only. They are NOT part of the ML feature vector.
         df["Efficiency_x_Experience"] = (
             df["Marker_Efficiency_%"] * df["Operator_Experience_Years"]
         )
         df["Defect_x_Complexity"] = (
             df["Expected_Defect_Rate_%"]
-            * df["Pattern_Complexity"].map(COMPLEXITY_MULT)
+            * df["Pattern_Complexity"].map(COMPLEXITY_MULTIPLIER)
         )
         df["Order_Value_USD"] = (
             df["Order_Quantity"]
-            * df["Fabric_Cost_Per_m"]
-            * df["Base_Consumption_Per_Unit_m"]
+            * df["Base_Consumption_Per_Unit_yards"]
+            * df["Fabric_Cost_Per_yard"]
         )
+        return df
+
+    def _add_encoded_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Pre-computed label-encoded columns for direct ML use."""
+        df["Garment_Type_Encoded"] = df["Garment_Type"].map(GARMENT_ENCODING)
+        df["Fabric_Type_Encoded"]  = df["Fabric_Type"].map(FABRIC_ENCODING)
+        df["Complexity_Encoded"]   = df["Pattern_Complexity"].map(COMPLEX_ENCODING)
+        df["Season_Encoded"]       = df["Season"].map(SEASON_ENCODING)
         return df
 
 
 # ============================================================================
-# EXPORT UTILITIES
+# BATCH-PREDICTION TEMPLATE
 # ============================================================================
 
-def export_csv(df, path, essential_only=False):
-    """Export dataset to CSV."""
-    if essential_only:
-        keep = [
-            "Order_ID", "Order_Date", "Order_Quantity",
-            "Garment_Type", "Fabric_Type",
-            "Fabric_Width_inches", "Fabric_Width_cm",
-            "Pattern_Complexity", "Season", "season_encoded",
+def create_batch_prediction_template(filepath: str, n_samples: int = 10) -> None:
+    """Create a CSV upload template for the Streamlit app's Batch Prediction page."""
+    rows = [
+        ("ORD_000001", 1000, "T-Shirt",  "Cotton",       63, "Simple",  85.0, 2.0,  5, "Spring"),
+        ("ORD_000002", 1500, "Shirt",    "Polyester",     59, "Medium",  88.0, 3.0,  8, "Summer"),
+        ("ORD_000003", 2000, "Pants",    "Denim",         63, "Complex", 82.0, 4.0,  3, "Fall"),
+        ("ORD_000004",  800, "Dress",    "Silk",          55, "Medium",  90.0, 1.5, 12, "Winter"),
+        ("ORD_000005", 2500, "Jacket",   "Cotton-Blend",  71, "Simple",  86.0, 2.5,  6, "Spring"),
+        ("ORD_000006", 1200, "T-Shirt",  "Cotton",        63, "Medium",  84.0, 2.0,  7, "Summer"),
+        ("ORD_000007", 1800, "Shirt",    "Polyester",     59, "Complex", 87.0, 3.5, 10, "Fall"),
+        ("ORD_000008",  900, "Pants",    "Denim",         63, "Simple",  83.0, 2.0,  4, "Winter"),
+        ("ORD_000009", 3000, "Dress",    "Silk",          55, "Medium",  91.0, 1.0, 15, "Spring"),
+        ("ORD_000010", 1100, "Jacket",   "Cotton",        71, "Simple",  85.0, 2.5,  5, "Summer"),
+    ]
+    pd.DataFrame(
+        rows[:n_samples],
+        columns=[
+            "Order_ID", "Order_Quantity", "Garment_Type", "Fabric_Type",
+            "Fabric_Width_inches", "Pattern_Complexity",
             "Marker_Efficiency_%", "Expected_Defect_Rate_%",
-            "Operator_Experience_Years",
-            "Planned_BOM_m", "Planned_BOM_yards",
-            "Actual_Consumption_m", "Actual_Consumption_yards",
-            "Variance_%", "Waste_Cost_USD",
-        ]
-        df = df[[c for c in keep if c in df.columns]]
-
-    df.to_csv(path, index=False)
-    print(f"    -> {path}  ({len(df):,} rows × {len(df.columns)} cols)")
+            "Operator_Experience_Years", "Season",
+        ],
+    ).to_csv(filepath, index=False)
+    print(f"  [OK] Batch template  -> {filepath}  ({n_samples} rows)")
 
 
-def export_summary(df, path):
-    """Write human-readable statistics summary."""
-    lines = []
 
-    def section(t):
-        lines.append(f"\n{t}")
-        lines.append("=" * 60)
+# ============================================================================
+# 100-SAMPLE BATCH PREDICTION DATASET
+# ============================================================================
 
-    section("Dataset Overview")
-    lines += [
-        f"Total orders  : {len(df):,}",
-        f"Date range    : {df['Order_Date'].min().date()} -> {df['Order_Date'].max().date()}",
-        f"Primary unit  : {df['Measurement_Unit'].iloc[0]}",
+def generate_batch_prediction_dataset(filepath: str, n_samples: int = 100,
+                                       random_seed: int = 99) -> None:
+    """
+    Generate a realistic 100-order batch prediction input CSV.
+
+    Uses a separate random seed from the training data so orders are
+    genuinely unseen. Columns match exactly what the Streamlit app
+    Batch Prediction page expects for upload.
+    """
+    rng = np.random.default_rng(random_seed)
+
+    garments     = ["T-Shirt", "Shirt", "Pants", "Dress", "Jacket"]
+    fabrics      = ["Cotton", "Polyester", "Cotton-Blend", "Silk", "Denim"]
+    complexities = ["Simple", "Medium", "Complex"]
+    seasons      = ["Spring", "Summer", "Fall", "Winter"]
+    widths_in    = [55, 59, 63, 71]
+
+    order_ids     = [f"BATCH_{str(i).zfill(5)}" for i in range(1, n_samples + 1)]
+    quantities    = rng.integers(100, 5001, n_samples)
+    garment_types = rng.choice(garments, n_samples)
+    fabric_types  = rng.choice(fabrics, n_samples)
+    width_inches  = rng.choice(widths_in, n_samples)
+    complexities_ = rng.choice(complexities, n_samples)
+    seasons_      = rng.choice(seasons, n_samples)
+    marker_eff    = np.round(rng.uniform(70.0, 95.0, n_samples), 1)
+    defect_rate   = np.round(rng.exponential(2.0, n_samples).clip(0, 10), 1)
+    op_exp        = rng.integers(1, 21, n_samples)
+
+    df = pd.DataFrame({
+        "Order_ID":                  order_ids,
+        "Order_Quantity":            quantities.astype(int),
+        "Garment_Type":              garment_types,
+        "Fabric_Type":               fabric_types,
+        "Fabric_Width_inches":       width_inches.astype(int),
+        "Pattern_Complexity":        complexities_,
+        "Season":                    seasons_,
+        "Marker_Efficiency_%":       marker_eff,
+        "Expected_Defect_Rate_%":    defect_rate,
+        "Operator_Experience_Years": op_exp.astype(int),
+    })
+
+    df.to_csv(filepath, index=False, encoding="utf-8")
+    print(f"  [OK] Batch dataset   -> {filepath}  ({len(df)} rows)")
+
+# ============================================================================
+# SUMMARY STATISTICS
+# ============================================================================
+
+def export_summary_statistics(df: pd.DataFrame, filepath: str) -> None:
+    over  = (df["Variance_yards"] > 0).mean() * 100
+    under = (df["Variance_yards"] < 0).mean() * 100
+    lines = [
+        "FABRIC CONSUMPTION DATASET -- SUMMARY STATISTICS",
+        "=" * 56,
+        "",
+        "Dataset Overview",
+        "-" * 40,
+        f"  Total orders     : {len(df):,}",
+        f"  Date range       : {df['Order_Date'].min().date()} -> {df['Order_Date'].max().date()}",
+        f"  Measurement unit : yards",
+        "",
+        "Consumption Statistics (yards)",
+        "-" * 40,
+        f"  Avg Planned BOM        : {df['Planned_BOM_yards'].mean():>10.2f} yd",
+        f"  Avg Actual Consumption : {df['Actual_Consumption_yards'].mean():>10.2f} yd",
+        f"  Avg Variance           : {df['Variance_yards'].mean():>10.2f} yd",
+        f"  Avg Variance %%         : {df['Variance_%'].mean():>10.2f} %%",
+        f"  Std Dev Variance %%     : {df['Variance_%'].std():>10.2f} %%",
+        "",
+        "Economic Impact",
+        "-" * 40,
+        f"  Total Planned Cost : ${df['Planned_Cost_USD'].sum():>14,.2f}",
+        f"  Total Actual Cost  : ${df['Actual_Cost_USD'].sum():>14,.2f}",
+        f"  Total Waste Cost   : ${df['Waste_Cost_USD'].sum():>14,.2f}",
+        f"  Avg Waste / Order  : ${df['Waste_Cost_USD'].mean():>14.2f}",
+        "",
+        "Variance Distribution",
+        "-" * 40,
+        f"  Over-consumption  : {over:.1f} %%",
+        f"  Under-consumption : {under:.1f} %%",
+        "",
+        "Garment Mix",
+        "-" * 40,
     ]
+    for g, cnt in df["Garment_Type"].value_counts().items():
+        lines.append(f"  {g:<12} : {cnt:,} ({cnt/len(df)*100:.1f} %%)")
+    lines += ["", "Fabric Mix", "-" * 40]
+    for f, cnt in df["Fabric_Type"].value_counts().items():
+        lines.append(f"  {f:<14} : {cnt:,} ({cnt/len(df)*100:.1f} %%)")
+    lines += ["", "Season Mix", "-" * 40]
+    for s, cnt in df["Season"].value_counts().items():
+        lines.append(f"  {s:<8} : {cnt:,} ({cnt/len(df)*100:.1f} %%)")
 
-    section("Consumption (Meters)")
-    lines += [
-        f"  Avg Planned BOM       : {df['Planned_BOM_m'].mean():>10.2f} m",
-        f"  Avg Actual            : {df['Actual_Consumption_m'].mean():>10.2f} m",
-        f"  Avg |Variance|        : {df['Variance_m'].abs().mean():>10.2f} m",
-        f"  Avg Variance %        : {df['Variance_%'].mean():>+10.2f}%",
-        f"  Std Variance %        : {df['Variance_%'].std():>10.2f}%",
-        f"  Avg |Variance %|      : {df['Variance_%'].abs().mean():>10.2f}%",
-        f"  Avg |Variance %|      : {df['Variance_%'].abs().mean():>10.2f}%  (|diff|/Planned)",
-        f"  MAPE vs Actual        : {(df['Variance_m'].abs()/df['Actual_Consumption_m']).mean()*100:>10.2f}%  (|diff|/Actual, true MAPE)",
-    ]
-
-    section("Consumption (Yards)")
-    lines += [
-        f"  Avg Planned BOM       : {df['Planned_BOM_yards'].mean():>10.2f} yd",
-        f"  Avg Actual            : {df['Actual_Consumption_yards'].mean():>10.2f} yd",
-        f"  Avg |Variance|        : {df['Variance_yards'].abs().mean():>10.2f} yd",
-    ]
-
-    section("Economic Impact")
-    lines += [
-        f"  Total planned cost    : ${df['Planned_Cost_USD'].sum():>12,.2f}",
-        f"  Total actual cost     : ${df['Actual_Cost_USD'].sum():>12,.2f}",
-        f"  Total waste cost      : ${df['Waste_Cost_USD'].sum():>12,.2f}",
-        f"  Avg waste / order     : ${df['Waste_Cost_USD'].mean():>12.2f}",
-    ]
-
-    section("Variance Distribution")
-    lines += [
-        f"  Over-consumption      : {(df['Variance_m'] > 0).mean()*100:.1f}%",
-        f"  Under-consumption     : {(df['Variance_m'] < 0).mean()*100:.1f}%",
-    ]
-
-    section("Feature-Target Correlations (Actual_Consumption_m)")
-    for feat in [
-        "Order_Quantity", "Marker_Efficiency_%",
-        "Expected_Defect_Rate_%", "Operator_Experience_Years", "Fabric_Width_cm",
-    ]:
-        if feat in df.columns:
-            r = df[feat].corr(df["Actual_Consumption_m"])
-            lines.append(f"  r( {feat:<40} ) = {r:+.3f}")
-
-    section("Season Distribution")
-    if "Season" in df.columns:
-        for s, cnt in df["Season"].value_counts().items():
-            lines.append(f"  {s:<8}: {cnt} orders ({cnt/len(df)*100:.1f}%)")
-
-    section("Expected ML Performance (1000+ rows, single 2% noise)")
-    vs = df["Variance_%"].std()
-    # For Gaussian noise N(0, sigma), E[|e|] = sigma * sqrt(2/pi) ~= sigma * 0.7979
-    import math as _math
-    half_normal_factor = _math.sqrt(2.0 / _math.pi)  # ~= 0.7979
-    lines += [
-        f"  Noise std (irreducible) : {vs:.2f}%",
-        f"  Theoretical MAPE floor  : {vs * half_normal_factor:.2f}%  (sigma * sqrt(2/pi))",
-        f"  Expected XGBoost MAPE   : {vs * 1.0:.2f} - {vs * 1.5:.2f}%",
-        f"  Expected Ensemble MAPE  : {vs * half_normal_factor:.2f} - {vs * 1.2:.2f}%",
-        f"  Expected Ensemble R2    : > 0.97  (>= 1000 rows)",
-    ]
-
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
-    print(f"    -> {path}")
-
-
-def create_batch_template(path, n_samples=10):
-    """Create CSV template for Streamlit batch prediction uploads."""
-    template = {
-        "Order_ID":  [f"ORD_{i:06d}" for i in range(1, n_samples + 1)],
-        "Order_Quantity":            [1000, 1500, 2000, 800,  2500, 1200, 1800, 900,  3000, 1100][:n_samples],
-        "Garment_Type":              ["T-Shirt","Shirt","Pants","Dress","Jacket",
-                                      "T-Shirt","Shirt","Pants","Dress","Jacket"][:n_samples],
-        "Fabric_Type":               ["Cotton","Polyester","Denim","Silk","Cotton-Blend",
-                                      "Cotton","Polyester","Denim","Silk","Cotton"][:n_samples],
-        "Fabric_Width_inches":       [63, 59, 63, 55, 71, 63, 59, 63, 55, 71][:n_samples],
-        "Pattern_Complexity":        ["Simple","Medium","Complex","Medium","Simple",
-                                      "Medium","Complex","Simple","Medium","Simple"][:n_samples],
-        "Season":                    ["Spring","Summer","Fall","Winter","Spring",
-                                      "Summer","Fall","Winter","Spring","Summer"][:n_samples],
-        "Marker_Efficiency_%":       [85, 88, 82, 90, 86, 84, 87, 83, 91, 85][:n_samples],
-        "Expected_Defect_Rate_%":    [2.0, 3.0, 4.0, 1.5, 2.5, 2.0, 3.5, 2.0, 1.0, 2.5][:n_samples],
-        "Operator_Experience_Years": [5,  8,  3, 12,  6,  7, 10,  4, 15,  5][:n_samples],
-    }
-    pd.DataFrame(template).to_csv(path, index=False)
-    print(f"    -> {path}  (batch upload template, {n_samples} rows)")
+    with open(filepath, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+    print(f"  [OK] Summary stats   -> {filepath}")
 
 
 # ============================================================================
@@ -470,74 +364,67 @@ def create_batch_template(path, n_samples=10):
 
 def main():
     print("=" * 70)
-    print("FABRIC CONSUMPTION DATA GENERATOR v3.0.0")
+    print("FABRIC CONSUMPTION DATA GENERATOR  v3.0.0")
+    print("Unit of Measure : YARDS only")
+    print("Dataset size    : 5,000 orders + 100-order batch prediction file")
     print("=" * 70)
-    print(f"Author           : Azim Mahmud")
-    print(f"Random seed      : {RANDOM_SEED}")
-    print(f"Noise std        : 2.0%  (single irreducible term — v3.0 design)")
-    print(f"Season           : now a training feature (season_encoded column)")
-    print(f"Operator exp range: 1–20 years (aligned with app.py UI)")
 
     out = "generated_data"
     os.makedirs(out, exist_ok=True)
-    print(f"\nOutput : {out}/\n")
+    print(f"\n? Output directory: {out}/\n")
 
     gen = FabricDataGenerator(random_seed=RANDOM_SEED)
 
-    # ── Dataset 1: 100-row demo (yards) ─────────────────────────────────────
-    print("-" * 70)
-    print("DATASET 1 — Demo  100 orders  (yards)")
-    df1 = gen.generate_dataset(100, "2024-01-01", "yards")
-    export_csv(df1, f"{out}/demo_dataset_100_orders_yards.csv")
-    export_csv(df1, f"{out}/demo_dataset_essential_columns.csv", essential_only=True)
-    export_summary(df1, f"{out}/demo_dataset_100_orders_yards_summary.txt")
+    # -- Primary training dataset -----------------------------------------
+    print("=" * 70)
+    print("PRIMARY DATASET  (5,000 orders -- yards)")
+    print("=" * 70)
+    df = gen.generate_dataset(n_samples=5000, start_date="2022-01-01")
 
-    # ── Dataset 2: 1 000-row primary training set (yards) ─────────────────────
-    print("\n" + "-" * 70)
-    print("DATASET 2 — Training  1 000 orders  (yards)  [PRIMARY]")
-    df2 = gen.generate_dataset(1000, "2023-01-01", "yards")
-    export_csv(df2, f"{out}/training_dataset_1000_orders_yards.csv")
-    export_summary(df2, f"{out}/training_dataset_1000_orders_yards_summary.txt")
+    primary_csv = f"{out}/training_dataset_5000_orders_yards.csv"
+    df.to_csv(primary_csv, index=False)
+    print(f"  [OK] Training data   -> {primary_csv}")
 
-    # ── Dataset 3: 5 000-row production set (yards) ───────────────────────────
-    print("\n" + "-" * 70)
-    print("DATASET 3 — Production  5 000 orders  (yards)")
-    df3 = gen.generate_dataset(5000, "2022-01-01", "yards")
-    export_csv(df3, f"{out}/production_dataset_5000_orders_yards.csv")
-    export_summary(df3, f"{out}/production_dataset_5000_orders_yards_summary.txt")
+    export_summary_statistics(df, f"{out}/training_dataset_5000_orders_yards_summary.txt")
 
-    # ── Dataset 4: Batch upload template ──────────────────────────────────────
-    print("\n" + "-" * 70)
-    print("DATASET 4 — Batch Prediction Template")
-    create_batch_template(f"{out}/batch_prediction_template.csv", n_samples=10)
+    # -- Small upload template (10 rows) ---------------------------------
+    print()
+    print("=" * 70)
+    print("BATCH TEMPLATE  (10 sample orders)")
+    print("=" * 70)
+    create_batch_prediction_template(f"{out}/batch_prediction_template.csv", n_samples=10)
 
-    print("\n" + "=" * 70)
+    # -- 100-sample batch prediction dataset ------------------------------
+    print()
+    print("=" * 70)
+    print("BATCH PREDICTION DATASET  (100 orders)")
+    print("=" * 70)
+    generate_batch_prediction_dataset(
+        f"{out}/batch_prediction_100_orders_yards.csv",
+        n_samples=100,
+        random_seed=99,
+    )
+
+    # -- Done -------------------------------------------------------------
+    print()
+    print("=" * 70)
     print("GENERATION COMPLETE")
     print("=" * 70)
-    print("""
-Files written to generated_data/:
+    print(f"""
+? Files in '{out}/':
+   training_dataset_5000_orders_yards.csv         <- main training dataset
+   training_dataset_5000_orders_yards_summary.txt <- statistics
+   batch_prediction_template.csv                  <- 10-row app upload template
+   batch_prediction_100_orders_yards.csv          <- 100-row batch prediction input
 
-  Training (use with train_models.py):
-    training_dataset_1000_orders_yards.csv    (1 000 rows) <- PRIMARY
+? Key ML columns:
+   Features : Order_Quantity, Fabric_Width_cm, Marker_Efficiency_%,
+              Expected_Defect_Rate_%, Operator_Experience_Years,
+              Garment_Type_Encoded, Fabric_Type_Encoded,
+              Complexity_Encoded, Season_Encoded
+   Target   : Actual_Consumption_yards
 
-  Production:
-    production_dataset_5000_orders_yards.csv  (5 000 rows)
-
-  Demo:
-    demo_dataset_100_orders_yards.csv   (100 rows)
-    demo_dataset_essential_columns.csv  (lightweight)
-
-  App batch upload:
-    batch_prediction_template.csv       (10 rows, includes Season column)
-
-  Summaries:
-    *_summary.txt
-
-Next steps:
-  1. python train_models.py
-       Expected MAPE  : XGBoost 2–4%,  Ensemble 1.5–3%
-       Expected R²    : XGBoost >0.96, Ensemble >0.97
-  2. streamlit run app.py
+? Next step: python train_models.py
 """)
 
 

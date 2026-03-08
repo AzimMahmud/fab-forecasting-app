@@ -7,7 +7,7 @@
 # ============================================================================
 
 [general]
-email = "Azim Mahmud <azim@example.com>"
+email = "azim@example.com"
 
 [logger]
 level = "info"
@@ -15,7 +15,6 @@ messageFormat = "%(asctime)s | %(levelname)s | %(name)s | %(funcName)s:%(lineno)
 
 [client]
 showErrorDetails = false
-maxUploadSize = 10   # MB — must match AppConfig.MAX_FILE_SIZE_MB in app.py
 toolbarMode = "minimal"
 
 [server]
@@ -24,9 +23,9 @@ address = "0.0.0.0"
 headless = true
 runOnSave = false
 fileWatcherType = "none"
-maxUploadSize = 10   # MB — must match AppConfig.MAX_FILE_SIZE_MB in app.py
+maxUploadSize = 200
 enableCORS = false
-enableXsrfProtection = true
+enableXsrfProtection = false
 
 [browser]
 gatherUsageStats = false

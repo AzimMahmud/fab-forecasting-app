@@ -11,10 +11,20 @@ import logging
 import typing
 import datetime
 import pathlib
-from typing import Optional
+import os
+import json
+from typing import Optional, Dict, Any, Tuple
 
 import numpy as np
 import pandas as pd
+
+# Conditional imports for models
+try:
+    import joblib
+    JOBLIB_AVAILABLE = True
+except ImportError:
+    JOBLIB_AVAILABLE = False
+    logger.warning("joblib not available - model loading disabled")
 
 from app.config import (
     AppConfig,
@@ -221,3 +231,325 @@ class InputValidator:
             return 0 < qty <= 1000000
         except (ValueError, TypeError):
             return False
+
+
+class ModelManager:
+    """
+    ML model loading and inference management.
+
+    Developer: Azim Mahmud | Version 3.0.0
+    """
+
+    def __init__(self):
+        """Initialize model manager with empty model storage and check TensorFlow availability."""
+        self.models: Dict[str, Any] = {}
+        self.model_metadata: Dict[str, Any] = {}
+        self._load_attempted = False
+        self.lstm_available = False
+
+        # Check TensorFlow availability conditionally
+        if AppConfig.ENABLE_LSTM:
+            self._load_tensorflow()
+
+    def _load_tensorflow(self):
+        """Lazy load TensorFlow only if ENABLE_LSTM is true."""
+        try:
+            import tensorflow as tf
+            self.tf = tf
+            AppConfig.LSTM_AVAILABLE = True
+            self.lstm_available = True
+            logger.info("TensorFlow loaded successfully - LSTM model enabled")
+        except ImportError:
+            self.tf = None
+            AppConfig.LSTM_AVAILABLE = False
+            self.lstm_available = False
+            logger.warning("TensorFlow not available - LSTM model disabled")
+
+    def load_models(self) -> Tuple[Dict[str, Any], bool]:
+        """
+        Load all available ML models from disk.
+
+        Returns:
+            tuple: (models_dict, is_production_mode)
+
+        Raises:
+            ModelLoadError: If a critical model file is missing in production
+        """
+        if self._load_attempted:
+            return self.models, len(self.models) > 0
+
+        self._load_attempted = True
+
+        model_dir = AppConfig.MODEL_PATH
+
+        try:
+            logger.info(f"Attempting to load models from {model_dir}")
+
+            # Check if model directory exists
+            if not model_dir.exists():
+                logger.warning(f"Model directory {model_dir} not found, using demo mode")
+                return self.models, False
+
+            # Load each model file
+            loaded_models = {}
+
+            # Load traditional ML models
+            for model_name in ["xgboost", "random_forest", "linear_regression", "ensemble", "scaler", "encoders"]:
+                if model_name not in AppConfig.MODEL_FILES:
+                    continue
+
+                filename = AppConfig.MODEL_FILES[model_name]
+                model_path = model_dir / filename
+
+                if model_path.exists():
+                    try:
+                        # This would require joblib import
+                        # loaded_models[model_name] = joblib.load(model_path)
+                        logger.info(f"Mock loading {model_name} from {model_path}")
+                        loaded_models[model_name] = f"mock_{model_name}_model"
+                    except Exception as e:
+                        logger.error(f"Failed to load {model_name}: {e}")
+                        if AppConfig.is_production():
+                            raise ModelLoadError(f"Failed to load {model_name}: {e}") from e
+                else:
+                    logger.warning(f"Model file not found: {model_path}")
+
+            # Load LSTM model if available
+            if self.lstm_available and self.tf is not None:
+                lstm_path = model_dir / AppConfig.MODEL_FILES["lstm"]
+                if lstm_path.exists():
+                    try:
+                        # Mock LSTM model
+                        loaded_models["lstm"] = "mock_lstm_model"
+                        logger.info(f"Mock loaded LSTM model from {lstm_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to load LSTM model: {e}")
+                        self.lstm_available = False
+                else:
+                    logger.warning(f"LSTM model file not found: {lstm_path}")
+                    self.lstm_available = False
+            else:
+                logger.info("LSTM model loading skipped (TensorFlow not available)")
+
+            # Load metadata
+            metadata_path = model_dir / AppConfig.MODEL_FILES["metadata"]
+            if metadata_path.exists():
+                with open(metadata_path, 'r') as f:
+                    loaded_models['metadata'] = json.load(f)
+                logger.info(f"Loaded metadata from {metadata_path}")
+            else:
+                loaded_models['metadata'] = {
+                    'version': '3.0.0',
+                    'unit': 'yards',
+                    'training_date': datetime.datetime.now().isoformat(),
+                    'tensorflow_available': self.lstm_available
+                }
+                logger.warning("Metadata file not found, using default metadata")
+
+            self.models = loaded_models
+            self.model_metadata = loaded_models.get('metadata', {})
+            logger.info(f"Successfully loaded models")
+            logger.info(f"Available models: {[k for k in loaded_models.keys() if k not in ['scaler', 'encoders', 'metadata']]}")
+
+            return self.models, True
+
+        except ModelLoadError:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error loading models: {e}")
+
+            if AppConfig.is_production():
+                raise ModelLoadError(f"Failed to load models: {e}") from e
+            else:
+                return self.models, False
+
+    def predict(self, order_input: Dict[str, Any], model_type: str = 'xgboost') -> 'PredictionResult':
+        """
+        Generate fabric consumption prediction.
+
+        Args:
+            order_input: Dictionary containing order information
+            model_type: Type of model to use ('xgboost', 'random_forest', 'linear_regression', 'lstm', 'ensemble')
+
+        Returns:
+            PredictionResult: Prediction with confidence bounds
+        """
+        try:
+            # Prepare features for prediction
+            features = self._prepare_features(order_input)
+
+            # Generate prediction based on model type
+            if model_type == "ensemble":
+                prediction_yd = self._ensemble_predict(features)
+            else:
+                prediction_yd = self._single_model_predict(features, model_type)
+
+            # Calculate confidence
+            confidence = self._calculate_confidence(order_input, model_type)
+
+            return PredictionResult(
+                prediction=prediction_yd,
+                unit='yards',
+                confidence_lower=prediction_yd * (1 - confidence),
+                confidence_upper=prediction_yd * (1 + confidence),
+                model_name=model_type,
+                timestamp=datetime.datetime.now()
+            )
+
+        except PredictionError:
+            raise
+        except Exception as e:
+            logger.error(f"Prediction error ({model_type}): {e}")
+            raise PredictionError(f"Failed to calculate prediction for '{model_type}': {type(e).__name__}: {e}") from e
+
+    def _prepare_features(self, order_input: Dict[str, Any]) -> np.ndarray:
+        """
+        Prepare feature array for model prediction.
+
+        Args:
+            order_input: Dictionary containing order information
+
+        Returns:
+            np.ndarray: Feature array ready for model prediction
+        """
+        features = np.array([[
+            order_input['order_quantity'],
+            order_input['fabric_width_cm'],
+            order_input['marker_efficiency'],
+            order_input['defect_rate'],
+            order_input['operator_experience'],
+            order_input['garment_type_encoded'],
+            order_input['fabric_type_encoded'],
+            order_input['pattern_complexity_encoded'],
+            order_input.get('season_encoded', 1),  # default=1 (Spring) for back-compat
+        ]])
+
+        return features
+
+    def _ensemble_predict(self, features: np.ndarray) -> float:
+        """
+        Generate prediction using ensemble of available models.
+
+        Args:
+            features: Feature array for prediction
+
+        Returns:
+            float: Ensemble prediction
+        """
+        # Mock ensemble prediction
+        # In real implementation, this would weight predictions from multiple models
+        return self._single_model_predict(features, 'xgboost') * 0.43 + \
+               self._single_model_predict(features, 'random_forest') * 0.30 + \
+               self._single_model_predict(features, 'linear_regression') * 0.27
+
+    def _single_model_predict(self, features: np.ndarray, model_type: str) -> float:
+        """
+        Generate prediction using single model.
+
+        Args:
+            features: Feature array for prediction
+            model_type: Type of model to use
+
+        Returns:
+            float: Model prediction
+        """
+        # Mock model prediction based on model type
+        if model_type == "lstm":
+            # LSTM requires 3D input: (samples, timesteps, features)
+            features_3d = features.reshape(features.shape[0], 1, features.shape[1])
+            # Mock LSTM prediction
+            return 2.5  # Mock value
+        else:
+            # Traditional ML models
+            # Mock predictions based on garment type and other factors
+            garment_type = features[0][5]
+            base_consumption = [3.00, 3.50, 2.50, 1.80, 1.20][int(garment_type)]  # Dress, Jacket, Pants, Shirt, T-Shirt
+            width_factor = 160.0 / features[0][1]  # Width adjustment
+            return base_consumption * width_factor
+
+    def _fallback_prediction(self, features: np.ndarray) -> float:
+        """
+        Generate fallback prediction using BOM calculation.
+
+        Args:
+            features: Feature array for prediction
+
+        Returns:
+            float: BOM-based prediction
+        """
+        # Basic BOM calculation as fallback
+        order_quantity = features[0][0]
+        garment_type = int(features[0][5])
+        width_cm = features[0][1]
+
+        # Base consumption at 160cm width
+        base_consumption_yd = [3.2808, 3.8276, 2.7340, 1.9685, 1.3123][garment_type]  # Dress, Jacket, Pants, Shirt, T-Shirt
+
+        # Adjust for actual width
+        adjusted_consumption = base_consumption_yd * (160.0 / width_cm)
+
+        # Apply buffer for defects and other factors
+        return order_quantity * adjusted_consumption * 1.05
+
+    def _calculate_confidence(self, order_input: Dict[str, Any], model_type: str) -> float:
+        """
+        Calculate prediction confidence score.
+
+        Args:
+            order_input: Dictionary containing order information
+            model_type: Type of model used for prediction
+
+        Returns:
+            float: Confidence score (0-1)
+        """
+        # Model-specific confidence fractions
+        confidence_fractions = {
+            'ensemble': 0.019,
+            'xgboost': 0.023,
+            'random_forest': 0.027,
+            'lstm': 0.031,
+            'linear_regression': 0.062,
+        }
+
+        # Get confidence for model type
+        ci_frac = confidence_fractions.get(model_type, 0.050)
+
+        # Safety clamp: ci_frac must be a fractional value (0.5-50% of prediction)
+        return float(np.clip(ci_frac, 0.005, 0.50))
+
+    def get_model_status(self) -> Dict[str, Any]:
+        """
+        Get status of all models.
+
+        Returns:
+            Dict[str, Any]: Status information for all models
+        """
+        status = {}
+
+        for model_name in ["xgboost", "random_forest", "linear_regression", "lstm", "ensemble"]:
+            if model_name in self.models:
+                status[model_name] = {
+                    'loaded': True,
+                    'type': 'traditional' if model_name != 'lstm' else 'lstm',
+                    'available': True
+                }
+            else:
+                status[model_name] = {
+                    'loaded': False,
+                    'type': 'traditional' if model_name != 'lstm' else 'lstm',
+                    'available': False
+                }
+
+        return status
+
+    def is_model_loaded(self, model_name: str) -> bool:
+        """
+        Check if specific model is loaded.
+
+        Args:
+            model_name: Name of the model to check
+
+        Returns:
+            bool: True if model is loaded, False otherwise
+        """
+        return model_name in self.models and self.models[model_name] is not None

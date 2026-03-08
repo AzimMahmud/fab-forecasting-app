@@ -272,103 +272,148 @@ class ModelManager:
             self.lstm_available = False
             logger.warning("TensorFlow not available - LSTM model disabled")
 
-    def load_models(self) -> Tuple[Dict[str, Any], bool]:
+    def load_models(self) -> None:
         """
         Load all available ML models from disk.
 
-        Returns:
-            tuple: (models_dict, is_production_mode)
-
         Raises:
-            ModelLoadError: If a critical model file is missing in production
+            ModelLoadError: If model loading fails
         """
-        if self._load_attempted:
-            return self.models, len(self.models) > 0
+        model_path = AppConfig.MODEL_PATH
 
-        self._load_attempted = True
+        if not model_path.exists():
+            raise ModelLoadError(f"Model directory not found: {model_path}")
 
-        model_dir = AppConfig.MODEL_PATH
+        # Load scikit-learn models
+        sklearn_models = {
+            "xgboost": "xgboost_model.pkl",
+            "random_forest": "random_forest_model.pkl",
+            "linear_regression": "linear_regression_model.pkl",
+            "ensemble": "ensemble_model.pkl"
+        }
 
-        try:
-            logger.info(f"Attempting to load models from {model_dir}")
+        for model_name, filename in sklearn_models.items():
+            model_file = model_path / filename
 
-            # Check if model directory exists
-            if not model_dir.exists():
-                logger.warning(f"Model directory {model_dir} not found, using demo mode")
-                return self.models, False
-
-            # Load each model file
-            loaded_models = {}
-
-            # Load traditional ML models
-            for model_name in ["xgboost", "random_forest", "linear_regression", "ensemble", "scaler", "encoders"]:
-                if model_name not in AppConfig.MODEL_FILES:
-                    continue
-
-                filename = AppConfig.MODEL_FILES[model_name]
-                model_path = model_dir / filename
-
-                if model_path.exists():
-                    try:
-                        # This would require joblib import
-                        # loaded_models[model_name] = joblib.load(model_path)
-                        logger.info(f"Mock loading {model_name} from {model_path}")
-                        loaded_models[model_name] = f"mock_{model_name}_model"
-                    except Exception as e:
-                        logger.error(f"Failed to load {model_name}: {e}")
-                        if AppConfig.is_production():
-                            raise ModelLoadError(f"Failed to load {model_name}: {e}") from e
-                else:
-                    logger.warning(f"Model file not found: {model_path}")
-
-            # Load LSTM model if available
-            if self.lstm_available and self.tf is not None:
-                lstm_path = model_dir / AppConfig.MODEL_FILES["lstm"]
-                if lstm_path.exists():
-                    try:
-                        # Mock LSTM model
-                        loaded_models["lstm"] = "mock_lstm_model"
-                        logger.info(f"Mock loaded LSTM model from {lstm_path}")
-                    except Exception as e:
-                        logger.error(f"Failed to load LSTM model: {e}")
-                        self.lstm_available = False
-                else:
-                    logger.warning(f"LSTM model file not found: {lstm_path}")
-                    self.lstm_available = False
+            if model_file.exists():
+                try:
+                    if JOBLIB_AVAILABLE:
+                        import joblib
+                        self.models[model_name] = joblib.load(model_file)
+                        self.model_metadata[model_name] = {
+                            "loaded": True,
+                            "type": "sklearn",
+                            "path": str(model_file),
+                            "file_size": model_file.stat().st_size
+                        }
+                        logger.info(f"Loaded {model_name} model from {filename}")
+                    else:
+                        logger.error("joblib not available - cannot load sklearn models")
+                        self.model_metadata[model_name] = {
+                            "loaded": False,
+                            "error": "joblib not available"
+                        }
+                except Exception as e:
+                    logger.error(f"Failed to load {model_name}: {e}")
+                    self.model_metadata[model_name] = {
+                        "loaded": False,
+                        "error": str(e)
+                    }
             else:
-                logger.info("LSTM model loading skipped (TensorFlow not available)")
+                logger.warning(f"Model file not found: {model_file}")
+                self.model_metadata[model_name] = {"loaded": False}
 
-            # Load metadata
-            metadata_path = model_dir / AppConfig.MODEL_FILES["metadata"]
-            if metadata_path.exists():
+        # Load auxiliary models
+        auxiliary_models = {
+            "scaler": "scaler.pkl",
+            "encoders": "label_encoders.pkl"
+        }
+
+        for model_name, filename in auxiliary_models.items():
+            model_file = model_path / filename
+
+            if model_file.exists():
+                try:
+                    if JOBLIB_AVAILABLE:
+                        import joblib
+                        self.models[model_name] = joblib.load(model_file)
+                        self.model_metadata[model_name] = {
+                            "loaded": True,
+                            "type": "auxiliary",
+                            "path": str(model_file),
+                            "file_size": model_file.stat().st_size
+                        }
+                        logger.info(f"Loaded {model_name} from {filename}")
+                    else:
+                        logger.error("joblib not available - cannot load auxiliary models")
+                        self.model_metadata[model_name] = {
+                            "loaded": False,
+                            "error": "joblib not available"
+                        }
+                except Exception as e:
+                    logger.error(f"Failed to load {model_name}: {e}")
+                    self.model_metadata[model_name] = {
+                        "loaded": False,
+                        "error": str(e)
+                    }
+            else:
+                logger.warning(f"Model file not found: {model_file}")
+                self.model_metadata[model_name] = {"loaded": False}
+
+        # Load LSTM model if enabled
+        if AppConfig.ENABLE_LSTM and self.tf is not None:
+            lstm_path = model_path / "lstm_model.h5"
+
+            if lstm_path.exists():
+                try:
+                    self.models["lstm"] = self.tf.keras.models.load_model(
+                        lstm_path, compile=False
+                    )
+                    self.model_metadata["lstm"] = {
+                        "loaded": True,
+                        "type": "tensorflow",
+                        "path": str(lstm_path),
+                        "file_size": lstm_path.stat().st_size
+                    }
+                    logger.info("Loaded LSTM model")
+                except Exception as e:
+                    logger.error(f"Failed to load LSTM: {e}")
+                    self.model_metadata["lstm"] = {
+                        "loaded": False,
+                        "error": str(e)
+                    }
+            else:
+                logger.warning(f"LSTM model file not found: {lstm_path}")
+                self.model_metadata["lstm"] = {"loaded": False}
+        else:
+            logger.info("LSTM model loading skipped (TensorFlow not available or disabled)")
+
+        # Load metadata
+        metadata_path = model_path / "model_metadata.json"
+        if metadata_path.exists():
+            try:
                 with open(metadata_path, 'r') as f:
-                    loaded_models['metadata'] = json.load(f)
+                    self.models['metadata'] = json.load(f)
+                    self.model_metadata['metadata'] = self.models['metadata']
                 logger.info(f"Loaded metadata from {metadata_path}")
-            else:
-                loaded_models['metadata'] = {
+            except Exception as e:
+                logger.error(f"Failed to load metadata: {e}")
+                self.model_metadata['metadata'] = {
                     'version': '3.0.0',
                     'unit': 'yards',
                     'training_date': datetime.now().isoformat(),
                     'tensorflow_available': self.lstm_available
                 }
-                logger.warning("Metadata file not found, using default metadata")
+        else:
+            self.model_metadata['metadata'] = {
+                'version': '3.0.0',
+                'unit': 'yards',
+                'training_date': datetime.now().isoformat(),
+                'tensorflow_available': self.lstm_available
+            }
+            logger.warning("Metadata file not found, using default metadata")
 
-            self.models = loaded_models
-            self.model_metadata = loaded_models.get('metadata', {})
-            logger.info(f"Successfully loaded models")
-            logger.info(f"Available models: {[k for k in loaded_models.keys() if k not in ['scaler', 'encoders', 'metadata']]}")
-
-            return self.models, True
-
-        except ModelLoadError:
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error loading models: {e}")
-
-            if AppConfig.is_production():
-                raise ModelLoadError(f"Failed to load models: {e}") from e
-            else:
-                return self.models, False
+        logger.info(f"Model loading complete: {sum(1 for m in self.model_metadata.values() if m.get('loaded'))}/{len(self.model_metadata)} models loaded")
 
     def predict(self, order_input: Dict[str, Any], model_type: str = 'xgboost') -> 'PredictionResult':
         """
@@ -460,19 +505,27 @@ class ModelManager:
         Returns:
             float: Model prediction
         """
-        # Mock model prediction based on model type
-        if model_type == "lstm":
-            # LSTM requires 3D input: (samples, timesteps, features)
-            features_3d = features.reshape(features.shape[0], 1, features.shape[1])
-            # Mock LSTM prediction
-            return 2.5  # Mock value
-        else:
-            # Traditional ML models
-            # Mock predictions based on garment type and other factors
-            garment_type = features[0][5]
-            base_consumption = [3.00, 3.50, 2.50, 1.80, 1.20][int(garment_type)]  # Dress, Jacket, Pants, Shirt, T-Shirt
-            width_factor = 160.0 / features[0][1]  # Width adjustment
-            return base_consumption * width_factor
+        # Check if model is loaded
+        if model_type not in self.models or not self.model_metadata[model_type].get('loaded', False):
+            logger.warning(f"Model {model_type} not loaded, using fallback")
+            return self._fallback_prediction(features)
+
+        try:
+            if model_type == "lstm":
+                # LSTM requires 3D input: (samples, timesteps, features)
+                features_3d = features.reshape(features.shape[0], 1, features.shape[1])
+                prediction = self.models[model_type].predict(features_3d)[0][0]
+            else:
+                # Traditional ML models
+                prediction = self.models[model_type].predict(features)[0]
+
+            logger.debug(f"Prediction from {model_type}: {prediction}")
+            return float(prediction)
+
+        except Exception as e:
+            logger.error(f"Prediction failed for {model_type}: {e}")
+            # Fallback to BOM calculation
+            return self._fallback_prediction(features)
 
     def _fallback_prediction(self, features: np.ndarray) -> float:
         """
@@ -533,19 +586,15 @@ class ModelManager:
         """
         status = {}
 
+        # Check main prediction models
         for model_name in ["xgboost", "random_forest", "linear_regression", "lstm", "ensemble"]:
-            if model_name in self.models:
-                status[model_name] = {
-                    'loaded': True,
-                    'type': 'traditional' if model_name != 'lstm' else 'lstm',
-                    'available': True
-                }
-            else:
-                status[model_name] = {
-                    'loaded': False,
-                    'type': 'traditional' if model_name != 'lstm' else 'lstm',
-                    'available': False
-                }
+            metadata = self.model_metadata.get(model_name, {})
+            status[model_name] = {
+                'loaded': metadata.get('loaded', False),
+                'type': metadata.get('type', 'traditional' if model_name != 'lstm' else 'lstm'),
+                'available': model_name in self.models and metadata.get('loaded', False),
+                'error': metadata.get('error', None)
+            }
 
         return status
 

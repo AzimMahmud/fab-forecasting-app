@@ -711,10 +711,10 @@ class SessionManager:
         if 'session_start' not in st.session_state:
             return True
 
-        elapsed = (datetime.datetime.now() - st.session_state.last_activity).total_seconds()
-        timeout_minutes = elapsed / 60
+        elapsed = (datetime.now() - st.session_state.last_activity).total_seconds()
+        elapsed_minutes = elapsed / 60
 
-        return timeout_minutes < AppConfig.SESSION_TIMEOUT_MINUTES
+        return elapsed_minutes < AppConfig.SESSION_TIMEOUT_MINUTES
 
     @staticmethod
     def increment_prediction_count() -> int:

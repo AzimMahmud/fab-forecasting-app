@@ -63,6 +63,7 @@ from app.services import (
     DataGenerator,
     SessionManager,
     UIHelpers,
+    ROICalculator,
 )
 
 # Import theme early for proper styling
@@ -342,54 +343,88 @@ class PerformancePage:
 
 class ROICalculatorPage:
     @staticmethod
-    def render():
-        """Render ROI calculator page"""
-        st.header("💰 ROI Calculator")
+    def render(model_manager):
+        """Render ROI calculator page."""
+        import streamlit as st
+        from app.services import ROICalculator
+        from app.ui_notifications import show_success, show_error
+        from app.ui_theme import PRIMARY_COLOR
 
+        st.header("💰 ROI Calculator")
+        st.markdown("Calculate the return on investment for fabric optimization.")
+
+        # Input fields
         col1, col2 = st.columns(2)
 
         with col1:
-            order_size = st.number_input("Order Size (units)", value=1000)
-            unit_price = st.number_input("Unit Price ($)", value=25.0)
-            fabric_cost_pct = st.slider("Fabric Cost % of Total", 20, 50, value=35)
+            current_consumption = st.number_input(
+                "Current Consumption (yards)",
+                min_value=0.0,
+                value=1000.0,
+                step=10.0,
+                help="Enter your current fabric consumption"
+            )
 
         with col2:
-            current_consumption = st.number_input("Current Consumption (yards/unit)", value=2.5)
-            predicted_consumption = st.number_input("Predicted Consumption (yards/unit)", value=2.3)
-            waste_reduction_pct = st.slider("Additional Waste Reduction (%)", 0, 10, value=5)
+            predicted_consumption = st.number_input(
+                "Predicted/Optimized Consumption (yards)",
+                min_value=0.0,
+                value=900.0,
+                step=10.0,
+                help="Enter predicted or optimized consumption"
+            )
 
-        # Calculate savings
-        fabric_savings_per_unit = (current_consumption - predicted_consumption) * (unit_price * fabric_cost_pct / 100)
-        total_savings = fabric_savings_per_unit * order_size
-        additional_savings = total_savings * (waste_reduction_pct / 100)
-        total_roi = total_savings + additional_savings
+        fabric_cost = st.number_input(
+            "Fabric Cost per Yard ($)",
+            min_value=0.0,
+            value=2.50,
+            step=0.10,
+            help="Cost per yard of fabric"
+        )
 
-        # Display results
-        st.subheader("ROI Summary")
+        # Calculate button
+        if st.button("Calculate ROI", type="primary"):
+            try:
+                roi_data = ROICalculator.calculate_roi(
+                    current_consumption,
+                    predicted_consumption,
+                    fabric_cost
+                )
 
-        col1, col2, col3 = st.columns(3)
+                # Display results
+                st.subheader("ROI Results")
 
-        with col1:
-            st.metric("Fabric Savings", f"${total_savings:,.0f}")
+                col1, col2, col3 = st.columns(3)
 
-        with col2:
-            st.metric("Additional Savings", f"${additional_savings:,.0f}")
+                with col1:
+                    st.metric(
+                        "Fabric Saved",
+                        f"{roi_data['savings_yards']:.2f} yards",
+                        f"{roi_data['savings_percentage']:.1f}%"
+                    )
 
-        with col3:
-            st.metric("Total ROI", f"${total_roi:,.0f}")
+                with col2:
+                    st.metric(
+                        "Cost Savings",
+                        f"${roi_data['fabric_cost_savings']:.2f}",
+                        f"Projected Annual: ${roi_data['projected_annual_savings']:.2f}"
+                    )
 
-        # Breakdown
-        st.subheader("Cost Breakdown")
+                with col3:
+                    st.metric(
+                        "Efficiency",
+                        f"{100 - roi_data['efficiency_improvement']:.1f}%",
+                        f"+{roi_data['efficiency_improvement']:.1f}%"
+                    )
 
-        breakdown_data = {
-            "Current Fabric Cost": current_consumption * (unit_price * fabric_cost_pct / 100) * order_size,
-            "Predicted Fabric Cost": predicted_consumption * (unit_price * fabric_cost_pct / 100) * order_size,
-            "Total Revenue": unit_price * order_size,
-            "Profit Improvement": total_roi
-        }
+                # Report
+                report = ROICalculator.generate_roi_report(roi_data)
+                st.text(report)
 
-        breakdown_df = pd.DataFrame(list(breakdown_data.items()), columns=["Item", "Amount"])
-        st.dataframe(breakdown_df.style.format({"Amount": "${:,.0f}"}))
+                show_success("ROI calculation completed successfully!")
+
+            except Exception as e:
+                show_error(f"ROI calculation failed: {str(e)}")
 
 class DocumentationPage:
     @staticmethod
@@ -494,7 +529,7 @@ Release: January 2026"""
             "🎯 Single Prediction": lambda: SinglePredictionPage.render(model_manager),
             "📊 Batch Prediction": lambda: BatchPredictionPage.render(model_manager),
             "📈 Performance": lambda: PerformancePage.render(model_mgr=model_manager),
-            "💰 ROI Calculator": lambda: ROICalculatorPage.render(),
+            "💰 ROI Calculator": lambda: ROICalculatorPage.render(model_manager),
             "📚 Documentation": lambda: DocumentationPage.render(production_mode),
         }
 

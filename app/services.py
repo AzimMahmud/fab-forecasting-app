@@ -883,6 +883,76 @@ class SessionManager:
         }
 
 
+class ROICalculator:
+    """
+    ROI Calculator for fabric cost optimization.
+
+    Developer: Azim Mahmud | Version 4.0.0
+    """
+
+    @staticmethod
+    def calculate_roi(
+        current_consumption: float,
+        predicted_consumption: float,
+        fabric_cost_per_yard: float = 2.50,
+        labor_cost_per_garment: float = 0.50
+    ) -> Dict[str, Any]:
+        """
+        Calculate return on investment for optimization.
+
+        Args:
+            current_consumption: Current fabric consumption in yards
+            predicted_consumption: Predicted/optimized consumption in yards
+            fabric_cost_per_yard: Cost per yard of fabric
+            labor_cost_per_garment: Labor cost per garment
+
+        Returns:
+            Dictionary with ROI metrics
+        """
+        savings_yards = current_consumption - predicted_consumption
+        savings_fabric_cost = savings_yards * fabric_cost_per_yard
+
+        # Calculate production efficiency
+        efficiency = (predicted_consumption / current_consumption) * 100 if current_consumption > 0 else 100
+
+        return {
+            "current_consumption": current_consumption,
+            "predicted_consumption": predicted_consumption,
+            "savings_yards": savings_yards,
+            "savings_percentage": ((savings_yards / current_consumption) * 100) if current_consumption > 0 else 0,
+            "fabric_cost_savings": savings_fabric_cost,
+            "efficiency_improvement": 100 - efficiency,
+            "projected_annual_savings": savings_fabric_cost * 12,  # Assuming monthly
+            "payback_period_months": 0  # Will be calculated based on implementation cost
+        }
+
+    @staticmethod
+    def generate_roi_report(roi_data: Dict[str, Any]) -> str:
+        """
+        Generate human-readable ROI report.
+
+        Args:
+            roi_data: ROI calculation results
+
+        Returns:
+            Formatted report string
+        """
+        return f"""
+ROI Analysis Report
+===================
+
+Current Consumption: {roi_data['current_consumption']:.2f} yards
+Predicted Consumption: {roi_data['predicted_consumption']:.2f} yards
+
+Savings:
+- Fabric Saved: {roi_data['savings_yards']:.2f} yards ({roi_data['savings_percentage']:.1f}%)
+- Cost Savings: ${roi_data['fabric_cost_savings']:.2f}
+- Projected Annual Savings: ${roi_data['projected_annual_savings']:.2f}
+
+Efficiency Improvement: {roi_data['efficiency_improvement']:.1f}%
+"""
+
+
 class UIHelpers:
     """
     Reusable UI helper functions.

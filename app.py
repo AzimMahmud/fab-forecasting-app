@@ -452,6 +452,10 @@ Release: January 2026"""
         # Apply custom styles
         UIHelpers.apply_custom_styles()
 
+        # Apply professional theme
+        from app.ui_theme import apply_custom_styles
+        apply_custom_styles()
+
         # Initialize session state
         SessionManager.initialize()
 

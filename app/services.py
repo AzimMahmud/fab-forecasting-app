@@ -18,6 +18,12 @@ from typing import Optional, Dict, Any, Tuple
 import numpy as np
 import pandas as pd
 
+# Streamlit import for UI components
+try:
+    import streamlit as st
+except ImportError:
+    st = None
+
 # Initialize logger
 logger = logging.getLogger(AppConfig.APP_NAME)
 
@@ -553,3 +559,284 @@ class ModelManager:
             bool: True if model is loaded, False otherwise
         """
         return model_name in self.models and self.models[model_name] is not None
+
+
+class DataGenerator:
+    """
+    Generate synthetic training data for model development.
+
+    Developer: Azim Mahmud | Version 3.0.0
+    """
+
+    @staticmethod
+    def generate_synthetic_data(n_samples=1000) -> pd.DataFrame:
+        """
+        Generate synthetic fabric consumption data.
+
+        Args:
+            n_samples: Number of samples to generate (default: 1000)
+
+        Returns:
+            pd.DataFrame: Synthetic data with fabric consumption metrics
+        """
+        rng = np.random.default_rng(42)
+
+        # Generate synthetic data
+        garment_types = rng.choice(AppConfig.GARMENT_TYPES, n_samples)
+        fabric_types = rng.choice(AppConfig.FABRIC_TYPES, n_samples)
+        order_quantities = rng.integers(100, 5001, n_samples).astype(float)
+        fabric_widths = rng.choice(AppConfig.FABRIC_WIDTHS_CM, n_samples)
+        marker_efficiency = rng.normal(85.0, 5.0, n_samples).clip(70, 95)
+        defect_rates = rng.exponential(2.0, n_samples).clip(0, 10)
+
+        # Generate consumption data
+        data = []
+        for i in range(n_samples):
+            row = {
+                'Order_ID': f'ORD_{str(i+1).zfill(6)}',
+                'Garment_Type': garment_types[i],
+                'Fabric_Type': fabric_types[i],
+                'Order_Quantity': int(order_quantities[i]),
+                'Fabric_Width_cm': fabric_widths[i],
+                'Marker_Efficiency_%': marker_efficiency[i],
+                'Defect_Rate_%': defect_rates[i],
+                'Fabric_Consumption_yd': DataGenerator._calculate_consumption({
+                    'Garment_Type': garment_types[i],
+                    'Order_Quantity': order_quantities[i],
+                    'Fabric_Width_cm': fabric_widths[i],
+                    'Marker_Efficiency_%': marker_efficiency[i],
+                    'Defect_Rate_%': defect_rates[i]
+                })
+            }
+            data.append(row)
+
+        df = pd.DataFrame(data)
+        logger.info(f"Generated {n_samples} synthetic records")
+        return df
+
+    @staticmethod
+    def _calculate_consumption(row) -> float:
+        """
+        Calculate fabric consumption based on BOM.
+
+        Args:
+            row: Dictionary containing order parameters
+
+        Returns:
+            float: Fabric consumption in yards
+        """
+        # Base consumption values for different garment types (at 160cm width)
+        base_consumption = {
+            'Dress': 3.5,
+            'Jacket': 3.2,
+            'Pants': 2.8,
+            'Shirt': 2.2,
+            'T-Shirt': 1.5
+        }
+
+        # Get base consumption for garment type
+        garment_type = row['Garment_Type']
+        consumption = base_consumption.get(garment_type, 2.0)
+
+        # Adjust for fabric width
+        width_factor = 160.0 / row['Fabric_Width_cm']
+        consumption *= width_factor
+
+        # Adjust for order quantity (economies of scale)
+        quantity_factor = 1.0 - (0.02 * np.log(row['Order_Quantity'] / 100))
+        consumption *= quantity_factor
+
+        # Adjust for marker efficiency
+        efficiency_factor = 1.0 + ((85.0 - row['Marker_Efficiency_%']) / 100.0) * 0.05
+        consumption *= efficiency_factor
+
+        # Adjust for defect rate
+        defect_factor = 1.0 + (row['Defect_Rate_%'] / 100.0) * 0.1
+        consumption *= defect_factor
+
+        # Add buffer
+        buffer_factor = AppConfig.DEFAULT_BOM_BUFFER
+        consumption *= buffer_factor
+
+        return max(consumption, 0.1)  # Minimum 0.1 yards
+
+
+class SessionManager:
+    """
+    Manage Streamlit session state.
+
+    Developer: Azim Mahmud | Version 3.0.0
+    """
+
+    @staticmethod
+    def initialize_session() -> None:
+        """
+        Initialize session state variables.
+
+        Args:
+            None
+        """
+        defaults = {
+            'predictions_count': 0,
+            'total_savings': 0.0,
+            'session_start': datetime.datetime.now(),
+            'last_activity': datetime.datetime.now(),
+            'prediction_history': [],
+            'page_history': []
+        }
+
+        for key, value in defaults.items():
+            if key not in st.session_state:
+                st.session_state[key] = value
+                logger.debug(f"Initialized session state: {key}")
+
+    @staticmethod
+    def update_activity() -> None:
+        """
+        Update last activity timestamp.
+
+        Args:
+            None
+        """
+        st.session_state.last_activity = datetime.datetime.now()
+
+    @staticmethod
+    def is_session_valid() -> bool:
+        """
+        Check if session is still valid (not timed out).
+
+        Returns:
+            bool: True if session is valid, False if timed out
+        """
+        if 'session_start' not in st.session_state:
+            return True
+
+        elapsed = (datetime.datetime.now() - st.session_state.last_activity).total_seconds()
+        timeout_minutes = elapsed / 60
+
+        return timeout_minutes < AppConfig.SESSION_TIMEOUT_MINUTES
+
+    @staticmethod
+    def increment_prediction_count() -> int:
+        """
+        Increment and return prediction count.
+
+        Returns:
+            int: Updated prediction count
+        """
+        if 'predictions_count' not in st.session_state:
+            st.session_state['predictions_count'] = 0
+
+        st.session_state['predictions_count'] += 1
+        return st.session_state['predictions_count']
+
+    @staticmethod
+    def get_session_stats() -> Dict[str, Any]:
+        """
+        Get session statistics.
+
+        Returns:
+            Dict[str, Any]: Session statistics dictionary
+        """
+        return {
+            'predictions_count': st.session_state.get('predictions_count', 0),
+            'total_savings': st.session_state.get('total_savings', 0.0),
+            'session_duration': (
+                datetime.datetime.now() - st.session_state.get('session_start', datetime.datetime.now())
+            ).total_seconds() / 60,
+            'current_unit': 'yards'
+        }
+
+
+class UIHelpers:
+    """
+    Reusable UI helper functions.
+
+    Developer: Azim Mahmud | Version 3.0.0
+    """
+
+    @staticmethod
+    def display_metric_card(title: str, value: float, delta: Optional[float] = None) -> None:
+        """
+        Display a metric card.
+
+        Args:
+            title: Title of the metric
+            value: Value to display
+            delta: Change value (optional)
+        """
+        if delta is not None:
+            st.metric(title, f"{value:,.2f}", delta=f"{delta:+.2f}")
+        else:
+            st.metric(title, f"{value:,.2f}")
+
+    @staticmethod
+    def format_consumption(yards: float, meters: Optional[float] = None) -> str:
+        """
+        Format consumption value for display.
+
+        Args:
+            yards: Consumption value in yards
+            meters: Optional consumption value in meters
+
+        Returns:
+            str: Formatted consumption string
+        """
+        if meters is not None:
+            return f"{yards:.2f} yd / {meters:.2f} m"
+        else:
+            return f"{yards:.2f} yd"
+
+    @staticmethod
+    def create_comparison_chart(predictions: pd.DataFrame, title: str) -> None:
+        """
+        Create a comparison chart.
+
+        Args:
+            predictions: DataFrame containing prediction data
+            title: Chart title
+        """
+        fig = {
+            'data': [
+                {
+                    'x': predictions.index,
+                    'y': predictions['actual'],
+                    'name': 'Actual',
+                    'type': 'scatter',
+                    'mode': 'lines+markers'
+                },
+                {
+                    'x': predictions.index,
+                    'y': predictions['predicted'],
+                    'name': 'Predicted',
+                    'type': 'scatter',
+                    'mode': 'lines+markers'
+                }
+            ],
+            'layout': {
+                'title': title,
+                'xaxis': {'title': 'Order'},
+                'yaxis': {'title': 'Fabric Consumption (yards)'}
+            }
+        }
+        st.plotly_chart(fig, use_container_width=True)
+
+    @staticmethod
+    def display_system_health(health: Dict[str, Any]) -> None:
+        """
+        Display system health status.
+
+        Args:
+            health: Dictionary containing health metrics
+        """
+        status = health.get('status', 'unknown')
+        message = health.get('message', '')
+
+        if status == 'healthy':
+            st.success(f"✅ System Health: {message}")
+        elif status == 'warning':
+            st.warning(f"⚠️ System Health: {message}")
+        elif status == 'error':
+            st.error(f"❌ System Health: {message}")
+        else:
+            st.info(f"ℹ️ System Health: {message}")

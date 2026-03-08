@@ -65,6 +65,9 @@ from app.services import (
     UIHelpers,
 )
 
+# Import theme early for proper styling
+from app.ui_theme import apply_custom_styles as apply_theme_styles
+
 # Configure logging
 logger = configure_logging()
 
@@ -449,12 +452,11 @@ Release: January 2026"""
             }
         )
 
+        # Apply professional theme first (takes precedence)
+        apply_theme_styles()
+
         # Apply custom styles
         UIHelpers.apply_custom_styles()
-
-        # Apply professional theme
-        from app.ui_theme import apply_custom_styles
-        apply_custom_styles()
 
         # Initialize session state
         SessionManager.initialize()

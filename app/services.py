@@ -13,7 +13,7 @@ import pathlib
 import os
 import json
 from datetime import datetime
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 
 import numpy as np
 import pandas as pd
@@ -581,6 +581,65 @@ class ModelManager:
                     'loaded': True
                 }
         return metrics
+
+    def predict_batch(self, df: pd.DataFrame) -> List['PredictionResult']:
+        """
+        Generate predictions for multiple orders.
+
+        Args:
+            df: DataFrame with order data
+
+        Returns:
+            List of PredictionResult objects
+        """
+        results = []
+        for idx, row in df.iterrows():
+            try:
+                # Create OrderInput from row
+                order_input = self._create_order_input_from_row(row)
+
+                # Generate prediction
+                result = self.predict(order_input.to_dict(), self.mode)
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Prediction failed for row {idx}: {e}")
+                # Use fallback calculation
+                results.append(self._fallback_prediction_from_row(row))
+
+        return results
+
+    def _create_order_input_from_row(self, row: pd.Series) -> 'OrderInput':
+        """Create OrderInput from DataFrame row."""
+        return OrderInput(
+            order_id=str(row.get('Order_ID', f'BATCH_{len(row)}')),
+            garment_type=str(row.get('Garment_Type', 'T-Shirt')),
+            fabric_width_cm=float(row.get('Fabric_Width_CM', 150)),
+            fabric_type=str(row.get('Fabric_Type', 'Single Jersey')),
+            order_quantity=int(row.get('Order_Quantity', 0)),
+            quality_level=str(row.get('Quality_Level', 'Standard')),
+            color=str(row.get('Color', 'White'))
+        )
+
+    def _fallback_prediction_from_row(self, row: pd.Series) -> 'PredictionResult':
+        """Generate fallback prediction from DataFrame row."""
+        garment_type = str(row.get('Garment_Type', 'T-Shirt'))
+        quantity = int(row.get('Order_Quantity', 0))
+
+        base_consumption = AppConfig.GARMENT_BASE_CONSUMPTION_YD.get(
+            garment_type, 1.641
+        )
+        predicted_yd = float(quantity) * base_consumption
+        predicted_m = UnitConverter.convert_from_yards(predicted_yd, UnitType.METERS)
+
+        return PredictionResult(
+            predicted_yards=predicted_yd,
+            predicted_meters=predicted_m,
+            model_used='fallback_bom',
+            confidence_score=0.7,
+            processing_time_ms=0,
+            order_id=str(row.get('Order_ID', f'BATCH_{len(row)}')),
+            timestamp=datetime.now()
+        )
 
 
 class DataGenerator:

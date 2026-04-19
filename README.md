@@ -1,17 +1,17 @@
 # Fabric Consumption Forecasting System
 
-**Version:** 1.0.0
+**Version:** 3.0.0
 **Developer:** Azim Mahmud
 **Release Date:** January 2026
 
-A production-ready Streamlit dashboard for intelligent fabric consumption prediction with dual unit support (Meters & Yards).
+A production-ready Streamlit dashboard for intelligent fabric consumption prediction — yards only.
 
 ---
 
 ## Features
 
 - **AI-Powered Predictions:** Machine learning models for accurate fabric consumption forecasting
-- **Dual Unit Support:** Seamless conversion between meters and yards
+- **Yards-Based Predictions:** All consumption, BOM, and cost outputs expressed in yards
 - **Batch Processing:** Upload CSV files for bulk predictions
 - **ROI Calculator:** Analyze economic impact and environmental benefits
 - **Production-Ready:** Comprehensive error handling, logging, and configuration management
@@ -63,6 +63,8 @@ Copy `.env.example` to `.env` and configure:
 | `FABRIC_APP_MAX_BATCH_ROWS` | Batch row limit | `1000` |
 | `FABRIC_APP_MODEL_PATH` | Model directory path | `models` |
 | `FABRIC_APP_SESSION_TIMEOUT_MINUTES` | Session timeout | `120` |
+| `FABRIC_APP_ENABLE_LSTM` | Enable LSTM model (requires TensorFlow) | `true` |
+| `FABRIC_APP_ENABLE_ANALYTICS` | Enable usage analytics | `false` |
 
 ---
 
@@ -72,7 +74,7 @@ Copy `.env.example` to `.env` and configure:
 
 ```bash
 # Build image
-docker build -t fabric-forecast:1.0.0 .
+docker build -t fabric-forecast:3.0.0 .
 
 # Run container
 docker run -d \
@@ -80,19 +82,13 @@ docker run -d \
   -p 8501:8501 \
   --env-file .env \
   -v $(pwd)/models:/app/models:ro \
-  fabric-forecast:1.0.0
+  fabric-forecast:3.0.0
 ```
 
 ### Using Docker Compose
 
 ```bash
 docker-compose up -d
-```
-
-### Kubernetes (Helm)
-
-```bash
-helm install fabric-forecast ./helm-chart
 ```
 
 ---
@@ -112,6 +108,8 @@ fabric-forecast-app/
 │   ├── xgboost_model.pkl
 │   ├── random_forest_model.pkl
 │   ├── linear_regression_model.pkl
+│   ├── ensemble_model.pkl
+│   ├── lstm_model.h5
 │   ├── scaler.pkl
 │   ├── label_encoders.pkl
 │   └── model_metadata.json
@@ -126,14 +124,12 @@ fabric-forecast-app/
 
 ```python
 {
-    "prediction": float,           # Primary prediction value
-    "prediction_alternate": float, # Value in alternate unit
-    "unit": str,                   # "meters" or "yards"
-    "unit_alternate": str,         # Alternate unit name
-    "confidence_lower": float,     # Lower confidence bound
-    "confidence_upper": float,     # Upper confidence bound
-    "model_name": str,             # Model used
-    "timestamp": str               # ISO format timestamp
+    "prediction": float,       # Primary prediction value (yards)
+    "unit": str,               # "yards"
+    "confidence_lower": float, # Lower confidence bound
+    "confidence_upper": float, # Upper confidence bound
+    "model_name": str,         # Model used
+    "timestamp": str           # ISO format timestamp
 }
 ```
 

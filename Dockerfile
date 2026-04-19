@@ -2,7 +2,7 @@
 # FABRIC CONSUMPTION FORECASTING SYSTEM
 # Production Dockerfile
 # ============================================================================
-# Version: 1.0.0
+# Version: 3.0.0
 # Developer: Azim Mahmud
 # ============================================================================
 

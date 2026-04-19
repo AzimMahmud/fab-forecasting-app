@@ -1,37 +1,29 @@
 """
 ================================================================================
-              FABRIC CONSUMPTION FORECASTING SYSTEM
-                     MODEL TRAINING SCRIPT
-================================================================================
+  FABRIC CONSUMPTION FORECASTING SYSTEM — MODEL TRAINING SCRIPT
+  Version  : 3.0.0
+  Developer: Azim Mahmud
+  Date     : January 2026
+  Python   : 3.10.x
+  Unit     : yards (all targets and outputs are in yards)
 
-Trains five ML models for fabric consumption prediction using the
-5,000-order yards dataset produced by data_generation_script.py.
+  Models trained:
+    1. Linear Regression   (OLS baseline)
+    2. Random Forest       (300 estimators)
+    3. XGBoost             (300 estimators, eta=0.08)
+    4. LSTM                (requires TensorFlow 2.13 — skipped gracefully if absent)
+    5. Ensemble            (weighted average of the above)
 
-Models trained:
-  1. Linear Regression  (baseline)
-  2. Random Forest
-  3. XGBoost
-  4. LSTM  (requires TensorFlow — skipped gracefully if absent)
-  5. Ensemble  (weighted average of the above)
-
-Key changes vs v2.0 / v1.0:
-  - Target column : Actual_Consumption_yards  (was Actual_Consumption_m)
-  - Metadata unit : yards
-  - 9 features    : adds season_encoded (was 8)
-  - Input file    : training_dataset_5000_orders_yards.csv  (5,000 rows)
-  - Ensemble model: trained and saved alongside individual models
-  - ci_bounds     : per-model empirical CI fractions written to metadata
-
-Version:   3.0.0
-Developer: Azim Mahmud
-Date:      January 2026
+  Usage:
+    pip install -r requirements.txt
+    python data_generation_script.py   # generate dataset first
+    python train_models.py             # train and save all models
 ================================================================================
 """
 
 # ============================================================================
-# IMPORTS
+# STANDARD LIBRARY
 # ============================================================================
-
 import os
 import sys
 import json
@@ -42,112 +34,139 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
+# ============================================================================
+# THIRD-PARTY IMPORTS
+# ============================================================================
 import numpy as np
 import pandas as pd
 import joblib
-from sklearn.model_selection import train_test_split, cross_val_score, KFold, cross_val_score
+
+from sklearn.model_selection import train_test_split, cross_val_score, KFold
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-
+from sklearn.metrics import (
+    mean_squared_error,
+    r2_score,
+    mean_absolute_error,
+    make_scorer,
+)
 import xgboost as xgb
 
+# TensorFlow / Keras — optional; LSTM is skipped if not installed
 try:
     import tensorflow as tf
     from tensorflow import keras
-    from tensorflow.keras import layers, callbacks
+    from tensorflow.keras import layers, callbacks  # type: ignore
+
     TENSORFLOW_AVAILABLE = True
 except ImportError:
     TENSORFLOW_AVAILABLE = False
-    print("WARNING: TensorFlow not available — LSTM training will be skipped.")
+    print(
+        "\n  TensorFlow not found — LSTM will be skipped.\n"
+        "  Install with:  pip install tensorflow==2.13.0\n"
+    )
 
 
 # ============================================================================
-# CONFIGURATION
+# LOGGING
 # ============================================================================
+def _make_logger(name: str = "ModelTraining") -> logging.Logger:
+    log = logging.getLogger(name)
+    if log.handlers:
+        return log
+    log.setLevel(logging.INFO)
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(
+        logging.Formatter(
+            "%(asctime)s | %(levelname)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    log.addHandler(ch)
+    return log
 
+
+logger = _make_logger()
+
+
+# ============================================================================
+# TRAINING CONFIGURATION
+# ============================================================================
 class TrainingConfig:
-    """Centralised training configuration — yards UOM, 5,000-row dataset."""
+    """
+    All hyper-parameters and constants in one place.
+    Edit only this class to tune the models.
+    """
 
-    # ── Data ────────────────────────────────────────────────────────────────
-    DATA_PATH     = Path("generated_data")
+    # ── Paths ────────────────────────────────────────────────────────────────
+    DATA_PATH = Path("generated_data")
     TRAINING_DATA = "training_dataset_5000_orders_yards.csv"
+    MODEL_PATH = Path("models")
 
-    # ── Model artefacts ─────────────────────────────────────────────────────
-    MODEL_PATH   = Path("models")
+    # ── Reproducibility ──────────────────────────────────────────────────────
     RANDOM_STATE = 42
-    TEST_SIZE    = 0.20   # 80 / 20 split
-    VAL_SIZE     = 0.20   # of the 80 % train portion → 64 / 16 / 20 overall
+    TEST_SIZE = 0.20  # 20 % held-out test set
+    VAL_SIZE = 0.20  # 20 % of remaining 80 % => 16 % overall
 
     # ── XGBoost ─────────────────────────────────────────────────────────────
     XGB_PARAMS = {
-        "objective":       "reg:squarederror",
-        "random_state":    RANDOM_STATE,
-        "n_estimators":    300,
-        "max_depth":       8,
-        "learning_rate":   0.08,
-        "subsample":       0.8,
+        "objective": "reg:squarederror",
+        "n_estimators": 300,
+        "max_depth": 8,
+        "learning_rate": 0.08,
+        "subsample": 0.8,
         "colsample_bytree": 0.8,
-        "verbosity":       0,
+        "random_state": 42,
+        "verbosity": 0,
     }
 
     # ── Random Forest ────────────────────────────────────────────────────────
     RF_PARAMS = {
-        "random_state":    RANDOM_STATE,
-        "n_estimators":    300,
-        "max_depth":       12,
+        "n_estimators": 300,
+        "max_depth": 12,
         "min_samples_split": 4,
-        "min_samples_leaf":  2,
-        "max_features":    "sqrt",
-        "bootstrap":       True,
-        "n_jobs":          -1,
-        "verbose":         0,
+        "min_samples_leaf": 2,
+        "max_features": "sqrt",
+        "bootstrap": True,
+        "random_state": 42,
+        "n_jobs": -1,
     }
 
     # ── Linear Regression ────────────────────────────────────────────────────
     LR_PARAMS = {"fit_intercept": True}
 
-    # ── LSTM ────────────────────────────────────────────────────────────────
+    # ── LSTM ─────────────────────────────────────────────────────────────────
     LSTM_PARAMS = {
-        "units_layer1":     64,
-        "units_layer2":     32,
-        "dense_units":      16,
-        "dropout_rate":     0.20,
-        "batch_size":       32,
-        "epochs":           60,
-        "patience":         12,
+        "units_layer1": 64,
+        "units_layer2": 32,
+        "dense_units": 16,
+        "dropout_rate": 0.20,
+        "batch_size": 32,
+        "epochs": 200,
+        "patience": 15,
     }
 
-    # ── Ensemble weights  (must sum to 1.0) ──────────────────────────────────
-    # Adjusted to include LSTM only when TensorFlow is available.
-    ENSEMBLE_WEIGHTS_NO_LSTM = {
-        "xgboost":           0.50,
-        "random_forest":     0.35,
-        "linear_regression": 0.15,
-    }
-    ENSEMBLE_WEIGHTS_WITH_LSTM = {
-        "xgboost":           0.43,
-        "random_forest":     0.30,
-        "lstm":              0.17,
-        "linear_regression": 0.10,
-    }
+    # ── Ensemble weights ─────────────────────────────────────────────────────
+    # Computed dynamically at training time using inverse-RMSE² weighting.
+    # No hardcoded weights needed.
 
-    # ── Column mapping  (CSV → internal names) ───────────────────────────────
+    # ── Column mapping  (CSV header => internal name) ────────────────────────
     COLUMN_MAPPING = {
-        "Order_Quantity":            "order_quantity",
-        "Fabric_Width_cm":           "fabric_width_cm",
-        "Marker_Efficiency_%":       "marker_efficiency",
-        "Expected_Defect_Rate_%":    "defect_rate",
+        "Order_Quantity": "order_quantity",
+        "Fabric_Width_cm": "fabric_width_cm",
+        "Marker_Efficiency_%": "marker_efficiency",
+        "Expected_Defect_Rate_%": "defect_rate",
         "Operator_Experience_Years": "operator_experience",
-        "Garment_Type":              "garment_type",
-        "Fabric_Type":               "fabric_type",
-        "Pattern_Complexity":        "pattern_complexity",
-        "Season":                    "season",
-        "Actual_Consumption_yards":  "fabric_consumption_yards",
+        "Garment_Type": "garment_type",
+        "Fabric_Type": "fabric_type",
+        "Pattern_Complexity": "pattern_complexity",
+        "Season": "season",
+        "Actual_Consumption_yards": "fabric_consumption_yards",
     }
 
-    # 9 features — must match EncodingMaps / app.py predict() feature vector
+    # ── Feature set (9 numeric / encoded features) ───────────────────────────
     FEATURES = [
         "order_quantity",
         "fabric_width_cm",
@@ -159,630 +178,683 @@ class TrainingConfig:
         "pattern_complexity_encoded",
         "season_encoded",
     ]
-
     TARGET = "fabric_consumption_yards"
 
-    # Alphabetical ordering matches sklearn LabelEncoder
+    # Alphabetical ordering must match sklearn LabelEncoder default behaviour
     CATEGORICAL_FEATURES = {
-        "garment_type":      ["Dress", "Jacket", "Pants", "Shirt", "T-Shirt"],
-        "fabric_type":       ["Cotton", "Cotton-Blend", "Denim", "Polyester", "Silk"],
-        "pattern_complexity":["Complex", "Medium", "Simple"],
-        "season":            ["Fall", "Spring", "Summer", "Winter"],
+        "garment_type": ["Dress", "Jacket", "Pants", "Shirt", "T-Shirt"],
+        "fabric_type": ["Cotton", "Cotton-Blend", "Denim", "Polyester", "Silk"],
+        "pattern_complexity": ["Complex", "Medium", "Simple"],
+        "season": ["Fall", "Spring", "Summer", "Winter"],
     }
 
-    # Empirical CI fraction (90th-pct residual / prediction) used by app.py
-    # Values below are starting defaults; save_metadata() overwrites with
-    # values computed from the actual test-set residuals.
+    # Default CI fractions (overwritten by empirical test-set values at runtime)
     CI_FRACTION_DEFAULTS = {
-        "ensemble":          0.019,
-        "xgboost":           0.023,
-        "random_forest":     0.027,
-        "lstm":              0.031,
+        "ensemble": 0.019,
+        "xgboost": 0.023,
+        "random_forest": 0.027,
+        "lstm": 0.031,
         "linear_regression": 0.062,
     }
 
-    GARMENT_BASE_M = {          # kept in sync with app.py + data_generation_script.py
+    # Garment base consumption (metres at 160 cm std width)
+    # Kept in metres so physics matches data_generation_script.py
+    GARMENT_BASE_M = {
         "T-Shirt": 1.20,
-        "Shirt":   1.80,
-        "Pants":   2.50,
-        "Dress":   3.00,
-        "Jacket":  3.50,
+        "Shirt": 1.80,
+        "Pants": 2.50,
+        "Dress": 3.00,
+        "Jacket": 3.50,
+    }
+
+    METERS_TO_YARDS = 1.0936132983
+
+    COMPLEXITY_MULTIPLIER = {
+        "Simple": 1.00,
+        "Medium": 1.15,
+        "Complex": 1.35,
     }
 
 
 # ============================================================================
-# LOGGING
+# DATA PREPROCESSING
 # ============================================================================
-
-def configure_logging() -> logging.Logger:
-    logger = logging.getLogger("ModelTraining")
-    logger.setLevel(logging.INFO)
-    fmt = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(logging.INFO)
-    ch.setFormatter(fmt)
-    logger.addHandler(ch)
-    return logger
-
-logger = configure_logging()
-
-
-# ============================================================================
-# DATA LOADING & PREPROCESSING
-# ============================================================================
-
 class DataPreprocessor:
-    """Load, clean, encode and scale the training dataset."""
+    """Load, clean, label-encode and scale the training dataset."""
 
-    def __init__(self, config: TrainingConfig):
-        self.config        = config
-        self.label_encoders: dict = {}
-        self.scaler: StandardScaler | None = None
+    def __init__(self, config):
+        self.config = config
+        self.label_encoders = {}
+        self.scaler = None
 
-    def load_data(self) -> pd.DataFrame:
+    def load_data(self):
         path = self.config.DATA_PATH / self.config.TRAINING_DATA
-        logger.info(f"Loading data from {path}")
+        logger.info(f"  Loading data from: {path}")
         if not path.exists():
-            raise FileNotFoundError(f"Dataset not found: {path}\n"
-                                    f"Run data_generation_script.py first.")
+            raise FileNotFoundError(
+                f"Dataset not found: {path}\n  Run:  python data_generation_script.py"
+            )
         df = pd.read_csv(path)
-        logger.info(f"  Loaded {df.shape[0]:,} rows × {df.shape[1]} columns")
+        logger.info(f"  Loaded {df.shape[0]:,} rows x {df.shape[1]} columns")
         return df
 
-    def preprocess(self, df: pd.DataFrame) -> pd.DataFrame:
-        logger.info("Preprocessing dataset ...")
+    def preprocess(self, df):
+        logger.info("  Preprocessing ...")
 
-        # Rename to internal names
+        # Rename CSV headers to internal names
         df = df.rename(columns=self.config.COLUMN_MAPPING)
 
-        # Drop nulls on raw source columns only.
-        # The *_encoded columns do not exist yet (created below), so we
-        # use the categorical source names + numeric features + target.
+        # Drop rows with nulls in ML-relevant columns
         raw_cats = list(self.config.CATEGORICAL_FEATURES.keys())
-        numeric_feats = [f for f in self.config.FEATURES if not f.endswith("_encoded")]
-        dropna_cols = list(dict.fromkeys(numeric_feats + raw_cats + [self.config.TARGET]))
-        dropna_cols = [c for c in dropna_cols if c in df.columns]
+        numeric_cols = [f for f in self.config.FEATURES if not f.endswith("_encoded")]
+        drop_cols = list(dict.fromkeys(numeric_cols + raw_cats + [self.config.TARGET]))
+        drop_cols = [c for c in drop_cols if c in df.columns]
         before = len(df)
-        df = df.dropna(subset=dropna_cols)
+        df = df.dropna(subset=drop_cols)
         if len(df) < before:
             logger.warning(f"  Dropped {before - len(df)} rows with nulls")
 
-        # Label-encode categorical features
+        # Label-encode categoricals (alphabetical classes => 0, 1, 2 ...)
         for feat, categories in self.config.CATEGORICAL_FEATURES.items():
+            if feat not in df.columns:
+                logger.warning(f"  Column '{feat}' missing — encoding skipped")
+                continue
             enc = LabelEncoder()
             enc.fit(categories)
-            col_enc = f"{feat}_encoded"
-            if feat in df.columns:
-                df[col_enc] = enc.transform(df[feat])
-                self.label_encoders[feat] = enc
-                logger.info(f"  Encoded '{feat}' → '{col_enc}'  ({categories})")
-            else:
-                logger.warning(f"  Column '{feat}' missing — encoding skipped")
+            df[f"{feat}_encoded"] = enc.transform(df[feat])
+            self.label_encoders[feat] = enc
+            logger.info(f"    Encoded '{feat}' => {categories}")
 
-        # Validate all 9 features present
+        # Verify all 9 features exist
         missing = set(self.config.FEATURES) - set(df.columns)
         if missing:
             raise ValueError(f"Features missing after encoding: {missing}")
 
-        logger.info(f"  Preprocessing complete: {len(df):,} rows retained")
+        logger.info(f"  Preprocessing complete — {len(df):,} rows retained")
         return df
 
-    def scale(self, X: np.ndarray, fit: bool = False) -> np.ndarray:
+    def scale(self, X, fit=False):
         if fit or self.scaler is None:
             self.scaler = StandardScaler()
-            out = self.scaler.fit_transform(X)
-            logger.info("  Scaler fitted")
+            result = self.scaler.fit_transform(X)
+            logger.info("  StandardScaler fitted")
         else:
-            out = self.scaler.transform(X)
-        return out
+            result = self.scaler.transform(X)
+        return result
 
 
 # ============================================================================
-# MODEL TRAINING
+# MODEL TRAINER
 # ============================================================================
-
 class ModelTrainer:
-    """Train and evaluate all five ML models."""
+    """Train, evaluate, and store all five ML models."""
 
-    def __init__(self, config: TrainingConfig):
-        self.config  = config
-        self.models: dict  = {}
-        self.perf:   dict  = {}
-        self.history: dict = {}
+    def __init__(self, config):
+        self.config = config
+        self.models = {}
+        self.perf = {}
+        self.history = {}
 
-    # ------------------------------------------------------------------
-    # Individual model trainers
-    # ------------------------------------------------------------------
+    # ── Individual trainers ──────────────────────────────────────────────────
 
-    def train_xgboost(self, Xtr, ytr):
-        logger.info("Training XGBoost ...")
-        m = xgb.XGBRegressor(**self.config.XGB_PARAMS)
-        m.fit(Xtr, ytr)
-        self.models["xgboost"] = m
-        logger.info("  ✅ XGBoost done")
-        return m
-
-    def train_random_forest(self, Xtr, ytr):
-        logger.info("Training Random Forest ...")
-        m = RandomForestRegressor(**self.config.RF_PARAMS)
-        m.fit(Xtr, ytr)
-        self.models["random_forest"] = m
-        logger.info("  ✅ Random Forest done")
-        return m
-
-    def train_linear_regression(self, Xtr, ytr):
-        logger.info("Training Linear Regression ...")
+    def _train_linear_regression(self, Xtr, ytr):
+        logger.info("    Training Linear Regression ...")
         m = LinearRegression(**self.config.LR_PARAMS)
         m.fit(Xtr, ytr)
         self.models["linear_regression"] = m
-        logger.info("  ✅ Linear Regression done")
+        logger.info("    Linear Regression done")
         return m
 
-    def train_lstm(self, Xtr, ytr, Xv, yv):
+    def _train_random_forest(self, Xtr, ytr):
+        logger.info("    Training Random Forest (300 trees) ...")
+        m = RandomForestRegressor(**self.config.RF_PARAMS)
+        m.fit(Xtr, ytr)
+        self.models["random_forest"] = m
+        logger.info("    Random Forest done")
+        return m
+
+    def _train_xgboost(self, Xtr, ytr):
+        logger.info("    Training XGBoost (300 trees, eta=0.08) ...")
+        m = xgb.XGBRegressor(**self.config.XGB_PARAMS)
+        m.fit(Xtr, ytr)
+        self.models["xgboost"] = m
+        logger.info("    XGBoost done")
+        return m
+
+    def _train_lstm(self, Xtr, ytr, Xv, yv):
         if not TENSORFLOW_AVAILABLE:
-            logger.warning("  ⚠️  TensorFlow unavailable — LSTM skipped")
+            logger.warning("    TensorFlow not available — LSTM skipped")
             return None
 
-        logger.info("Training LSTM ...")
-        n, f = Xtr.shape
-        Xtrl = Xtr.reshape(n, 1, f)
-        Xvl  = Xv.reshape(Xv.shape[0], 1, f)
-
         p = self.config.LSTM_PARAMS
-        model = keras.Sequential([
-            layers.LSTM(p["units_layer1"], activation="relu",
-                        input_shape=(1, f), return_sequences=True),
-            layers.Dropout(p["dropout_rate"]),
-            layers.LSTM(p["units_layer2"], activation="relu"),
-            layers.Dropout(p["dropout_rate"]),
-            layers.Dense(p["dense_units"], activation="relu"),
-            layers.Dense(1),
-        ])
-        model.compile(optimizer="adam", loss="mse", metrics=["mae"])
+        logger.info(
+            f"    Training LSTM (up to {p['epochs']} epochs, "
+            f"patience={p['patience']}) ..."
+        )
+        n_feat = Xtr.shape[1]
+
+        # Reshape to (samples, timesteps=1, features) for Keras LSTM
+        Xtr_3d = Xtr.reshape(-1, 1, n_feat)
+        Xv_3d = Xv.reshape(-1, 1, n_feat)
+
+        model = keras.Sequential(
+            [
+                layers.LSTM(
+                    p["units_layer1"],
+                    activation="relu",
+                    input_shape=(1, n_feat),
+                    return_sequences=True,
+                ),
+                layers.Dropout(p["dropout_rate"]),
+                layers.LSTM(p["units_layer2"], activation="relu"),
+                layers.Dropout(p["dropout_rate"]),
+                layers.Dense(p["dense_units"], activation="relu"),
+                layers.Dense(1),
+            ],
+            name="lstm_fabric_forecast",
+        )
+
+        model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+            loss="mse",
+            metrics=["mae"],
+        )
 
         cb = [
-            callbacks.EarlyStopping(monitor="val_loss", patience=p["patience"],
-                                    restore_best_weights=True, verbose=0),
-            callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5,
-                                        patience=6, min_lr=1e-5, verbose=0),
+            callbacks.EarlyStopping(
+                monitor="val_loss",
+                patience=p["patience"],
+                restore_best_weights=True,
+                verbose=0,
+            ),
+            callbacks.ReduceLROnPlateau(
+                monitor="val_loss",
+                factor=0.5,
+                patience=6,
+                min_lr=1e-5,
+                verbose=0,
+            ),
         ]
+
         hist = model.fit(
-            Xtrl, ytr,
-            validation_data=(Xvl, yv),
+            Xtr_3d,
+            ytr,
+            validation_data=(Xv_3d, yv),
             epochs=p["epochs"],
             batch_size=p["batch_size"],
             callbacks=cb,
             verbose=0,
         )
-        self.models["lstm"]  = model
-        self.history["lstm"] = hist.history
+
         epochs_run = len(hist.history["loss"])
-        logger.info(f"  ✅ LSTM done  (epochs={epochs_run}, "
-                    f"val_loss={hist.history['val_loss'][-1]:.4f})")
+        best_idx = int(np.argmin(hist.history["val_loss"]))
+        best_val = hist.history["val_loss"][best_idx]
+        logger.info(
+            f"    LSTM done  (best_epoch={best_idx + 1}/{epochs_run}, "
+            f"best_val_loss={best_val:.2f})"
+        )
+
+        self.models["lstm"] = model
+        self.history["lstm"] = hist.history
         return model
 
-    # ------------------------------------------------------------------
-    # Ensemble
-    # ------------------------------------------------------------------
+    # ── Ensemble ─────────────────────────────────────────────────────────────
 
-    def build_ensemble(self, Xte: np.ndarray, yte: np.ndarray) -> dict:
-        """
-        Compute weighted predictions from trained sub-models and return
-        an ensemble spec dict compatible with app.py's predict() logic.
-        """
-        weights = (
-            self.config.ENSEMBLE_WEIGHTS_WITH_LSTM
-            if "lstm" in self.models
-            else self.config.ENSEMBLE_WEIGHTS_NO_LSTM
-        )
-        # Normalise in case weights don't sum to exactly 1
-        total = sum(weights.values())
-        weights = {k: round(v / total, 4) for k, v in weights.items()}
+    def _build_ensemble(self, Xv, yv, Xte, yte):
+        """Weighted-average ensemble with dynamic inverse-RMSE² weights on validation set."""
+        val_rmses = {}
+        for name in ["xgboost", "random_forest", "lstm", "linear_regression"]:
+            m = self.models.get(name)
+            if m is None:
+                continue
+            
+            if name == "lstm" and TENSORFLOW_AVAILABLE:
+                Xl_v = Xv.reshape(-1, 1, Xv.shape[1])
+                val_preds = m.predict(Xl_v, verbose=0).flatten()
+            else:
+                val_preds = m.predict(Xv)
+            
+            yv_arr = yv.values if hasattr(yv, "values") else np.asarray(yv)
+            rmse_val = float(np.sqrt(mean_squared_error(yv_arr, val_preds)))
+            val_rmses[name] = rmse_val
+            
+        if not val_rmses:
+            raise RuntimeError("No sub-models available for ensemble")
 
-        ensemble_spec = {
-            "model_names": list(weights.keys()),
-            "weights":     weights,
-        }
-        self.models["ensemble"] = ensemble_spec
+        inv_rmse_sq = {n: 1.0 / (rmse ** 2) for n, rmse in val_rmses.items()}
+        total = sum(inv_rmse_sq.values())
+        weights = {n: round(v / total, 4) for n, v in inv_rmse_sq.items()}
 
-        # Compute ensemble predictions on test set for metric logging
+        weight_sum = sum(weights.values())
+        first_key = list(weights.keys())[0]
+        weights[first_key] = round(weights[first_key] + (1.0 - weight_sum), 4)
+
+        spec = {"model_names": list(weights.keys()), "weights": weights}
+        self.models["ensemble"] = spec
+
         preds = np.zeros(len(yte))
         for name, w in weights.items():
             m = self.models.get(name)
             if m is None:
+                logger.warning(
+                    f"    Ensemble: sub-model '{name}' not available — skipped"
+                )
                 continue
             if name == "lstm" and TENSORFLOW_AVAILABLE:
-                Xl = Xte.reshape(Xte.shape[0], 1, Xte.shape[1])
-                p  = m.predict(Xl, verbose=0).flatten()
+                Xl = Xte.reshape(-1, 1, Xte.shape[1])
+                p = m.predict(Xl, verbose=0).flatten()
             else:
-                p  = m.predict(Xte)
+                p = m.predict(Xte)
             preds += w * p
 
-        logger.info(f"  ✅ Ensemble built  weights={weights}")
-        return ensemble_spec, preds
+        logger.info(f"    Ensemble built (eval on Val)  weights={weights}")
+        return spec, preds
 
-    # ------------------------------------------------------------------
-    # Evaluation
-    # ------------------------------------------------------------------
+    # ── Evaluation ───────────────────────────────────────────────────────────
 
-    def evaluate(self, model, Xte: np.ndarray, yte: np.ndarray,
-                 name: str, ypred: np.ndarray = None) -> dict:
+    def _evaluate(self, model, Xte, yte, name, ypred=None):
+        """Compute RMSE, MAE, R2, MAPE and empirical 90th-pct CI fraction."""
         if ypred is None:
+            if name == "ensemble":
+                raise ValueError("Pass ypred= for the ensemble")
             if name == "lstm" and TENSORFLOW_AVAILABLE:
-                Xl     = Xte.reshape(Xte.shape[0], 1, Xte.shape[1])
-                ypred  = model.predict(Xl, verbose=0).flatten()
-            elif name == "ensemble":
-                raise ValueError("Pass ypred for ensemble")
+                Xl = Xte.reshape(-1, 1, Xte.shape[1])
+                ypred = model.predict(Xl, verbose=0).flatten()
             else:
-                ypred  = model.predict(Xte)
+                ypred = model.predict(Xte)
 
-        mse  = mean_squared_error(yte, ypred)
-        rmse = float(np.sqrt(mse))
-        mae  = float(mean_absolute_error(yte, ypred))
-        r2   = float(r2_score(yte, ypred))
-        mape = float(np.mean(np.abs((yte - ypred) / yte)) * 100)
+        yte_arr = yte.values if hasattr(yte, "values") else np.asarray(yte)
 
-        # Empirical 90th-pct CI fraction
-        residuals   = np.abs(yte.values - ypred) if hasattr(yte, "values") else np.abs(yte - ypred)
-        ci_frac_emp = float(np.percentile(residuals / np.abs(yte.values if hasattr(yte, "values") else yte), 90))
-        ci_frac     = round(max(ci_frac_emp, self.config.CI_FRACTION_DEFAULTS.get(name, 0.050)), 4)
+        rmse = float(np.sqrt(mean_squared_error(yte_arr, ypred)))
+        mae = float(mean_absolute_error(yte_arr, ypred))
+        r2 = float(r2_score(yte_arr, ypred))
+        mape = float(
+            np.mean(np.abs((yte_arr - ypred) / np.where(yte_arr == 0, 1, yte_arr)))
+            * 100
+        )
 
-        return {"rmse": round(rmse, 3), "mae": round(mae, 3),
-                "r2": round(r2, 4), "mape": round(mape, 2),
-                "ci_bounds": {"ci_fraction": ci_frac}}
+        residuals = np.abs(yte_arr - ypred)
+        safe_yte = np.where(yte_arr == 0, 1, yte_arr)
+        ci_frac_emp = float(np.percentile(residuals / safe_yte, 90))
+        ci_frac = round(
+            max(ci_frac_emp, self.config.CI_FRACTION_DEFAULTS.get(name, 0.05)), 4
+        )
 
-    # ------------------------------------------------------------------
-    # Train all
-    # ------------------------------------------------------------------
+        return {
+            "rmse": round(rmse, 3),
+            "mae": round(mae, 3),
+            "r2": round(r2, 4),
+            "mape": round(mape, 2),
+            "ci_bounds": {"ci_fraction": ci_frac},
+        }
+
+    # ── Orchestrator ─────────────────────────────────────────────────────────
 
     def train_all(self, Xtr, ytr, Xv, yv, Xte, yte):
-        logger.info("\n" + "=" * 60)
-        logger.info("TRAINING ALL MODELS")
-        logger.info("=" * 60 + "\n")
+        """Train all five models, evaluate, return (models, performance)."""
+        sep = "-" * 60
 
-        logger.info("[1/4] Linear Regression")
-        self.train_linear_regression(Xtr, ytr)
+        logger.info(f"\n{sep}")
+        logger.info("  [1/4] Linear Regression")
+        self._train_linear_regression(Xtr, ytr)
 
-        logger.info("[2/4] Random Forest")
-        self.train_random_forest(Xtr, ytr)
+        logger.info(f"\n{sep}")
+        logger.info("  [2/4] Random Forest")
+        self._train_random_forest(Xtr, ytr)
 
-        logger.info("[3/4] XGBoost")
-        self.train_xgboost(Xtr, ytr)
+        logger.info(f"\n{sep}")
+        logger.info("  [3/4] XGBoost")
+        self._train_xgboost(Xtr, ytr)
 
-        logger.info("[4/4] LSTM Neural Network")
-        self.train_lstm(Xtr, ytr, Xv, yv)
+        logger.info(f"\n{sep}")
+        logger.info("  [4/4] LSTM Neural Network")
+        self._train_lstm(Xtr, ytr, Xv, yv)
 
-        logger.info("\n" + "=" * 60)
-        logger.info("EVALUATING ALL MODELS")
-        logger.info("=" * 60 + "\n")
-
+        logger.info(f"\n{sep}")
+        logger.info("  Evaluating individual models ...")
         for name in ["linear_regression", "random_forest", "xgboost", "lstm"]:
             m = self.models.get(name)
             if m is None:
                 continue
-            self.perf[name] = self.evaluate(m, Xte, yte, name)
+            self.perf[name] = self._evaluate(m, Xte, yte, name)
             p = self.perf[name]
             logger.info(
-                f"  {name:<20}  RMSE={p['rmse']:>8.3f}  MAE={p['mae']:>7.3f}  "
-                f"R²={p['r2']:.4f}  MAPE={p['mape']:.2f}%  "
-                f"CI±{p['ci_bounds']['ci_fraction']*100:.1f}%"
+                f"    {name:<22}  RMSE={p['rmse']:>9.3f} yd  "
+                f"MAE={p['mae']:>8.3f} yd  R2={p['r2']:.4f}  MAPE={p['mape']:.2f}%"
             )
 
-        # Ensemble
-        logger.info("[5/5] Ensemble (weighted average)")
-        _, ens_preds = self.build_ensemble(Xte, yte)
-        self.perf["ensemble"] = self.evaluate(None, Xte, yte, "ensemble", ypred=ens_preds)
+        logger.info(f"\n{sep}")
+        logger.info("  [5/5] Ensemble (weighted average)")
+        _, ens_preds = self._build_ensemble(Xv, yv, Xte, yte)
+        self.perf["ensemble"] = self._evaluate(
+            None, Xte, yte, "ensemble", ypred=ens_preds
+        )
         p = self.perf["ensemble"]
         logger.info(
-            f"  {'ensemble':<20}  RMSE={p['rmse']:>8.3f}  MAE={p['mae']:>7.3f}  "
-            f"R²={p['r2']:.4f}  MAPE={p['mape']:.2f}%  "
-            f"CI±{p['ci_bounds']['ci_fraction']*100:.1f}%"
+            f"    {'ensemble':<22}  RMSE={p['rmse']:>9.3f} yd  "
+            f"MAE={p['mae']:>8.3f} yd  R2={p['r2']:.4f}  MAPE={p['mape']:.2f}%"
         )
 
         return self.models, self.perf
 
 
 # ============================================================================
-# SAVING MODELS & METADATA
+# MODEL SAVER
 # ============================================================================
-
 class ModelSaver:
-    """Persist trained models and write model_metadata.json."""
+    """Persist trained models and metadata to disk."""
 
-    def __init__(self, config: TrainingConfig):
+    def __init__(self, config):
         self.config = config
-        config.MODEL_PATH.mkdir(exist_ok=True)
+        config.MODEL_PATH.mkdir(parents=True, exist_ok=True)
 
-    def save(self, obj, filename: str):
+    def save_pkl(self, obj, filename):
         path = self.config.MODEL_PATH / filename
         joblib.dump(obj, path)
         kb = path.stat().st_size / 1024
-        logger.info(f"  ✅ {filename:<35} ({kb:>8.1f} KB)")
-        return str(path)
+        logger.info(f"    Saved {filename:<38} ({kb:>8.1f} KB)")
+        return path
 
-    def save_keras(self, model, filename: str):
+    def save_keras(self, model, filename):
         path = self.config.MODEL_PATH / filename
-        model.save(path)
+        model.save(str(path))
         kb = path.stat().st_size / 1024
-        logger.info(f"  ✅ {filename:<35} ({kb:>8.1f} KB)")
-        return str(path)
+        logger.info(f"    Saved {filename:<38} ({kb:>8.1f} KB)")
+        return path
 
-    def save_metadata(self, performance: dict, preprocessor: DataPreprocessor,
-                      ensemble_weights: dict, training_history: dict,
-                      training_date: str,
-                      cv_scores: dict = None,
-                      feature_importance: dict = None) -> str:
-        """
-        Write model_metadata.json consumed by app.py's ModelManager.
+    def save_metadata(
+        self,
+        performance,
+        preprocessor,
+        ensemble_weights,
+        training_history,
+        training_date,
+        cv_scores=None,
+        feature_importance=None,
+        bom_baseline=None,
+    ):
+        """Write model_metadata.json consumed by app.py."""
+        cv = cv_scores or {}
+        fi = feature_importance or {}
 
-        Structure mirrors the demo metadata in app.py so the app can
-        switch seamlessly between demo and production mode.
-        """
-        meta = {
-            "version":              "3.0.0",
-            "training_date":        training_date,
-            "unit":                 "yards",          # ← yards only
-            "n_training_samples":   5000,
-            "features":             self.config.FEATURES,
-            "target":               self.config.TARGET,
-            "tensorflow_available": TENSORFLOW_AVAILABLE,
-            "models":               {},
-            "bom_baseline":         {},
-            "cv_scores":            cv_scores or {},
-            "feature_importance":   feature_importance or {},
+        _type_map = {
+            "xgboost": "xgboost.XGBRegressor",
+            "random_forest": "sklearn.ensemble.RandomForestRegressor",
+            "linear_regression": "sklearn.linear_model.LinearRegression",
+            "lstm": "tensorflow.keras.Sequential",
+            "ensemble": "weighted_average_ensemble",
         }
 
-        _cv  = cv_scores          or {}
-        _fi  = feature_importance or {}
+        meta = {
+            "version": "3.0.0",
+            "training_date": training_date,
+            "unit": "yards",
+            "n_training_samples": 5000,
+            "features": self.config.FEATURES,
+            "target": self.config.TARGET,
+            "tensorflow_available": TENSORFLOW_AVAILABLE,
+            "models": {},
+            "bom_baseline": bom_baseline or {"rmse": 0, "mae": 0, "r2": 0, "mape": 0},
+            "cv_scores": cv,
+            "feature_importance": fi,
+        }
+
         for name, perf in performance.items():
             entry = {
-                "file":     f"{name}_model.pkl" if name != "lstm" else "lstm_model.h5",
-                "type":     self._model_type(name),
-                "features": len(self.config.FEATURES),
-                "rmse":     perf["rmse"],
-                "mae":      perf["mae"],
-                "r2":       perf["r2"],
-                "mape":     perf["mape"],
-                "ci_bounds": perf.get("ci_bounds", {"ci_fraction": 0.050}),
+                "file": f"{name}_model.pkl" if name != "lstm" else "lstm_model.h5",
+                "type": _type_map.get(name, "unknown"),
+                "n_features": len(self.config.FEATURES),
+                "rmse": perf["rmse"],
+                "mae": perf["mae"],
+                "r2": perf["r2"],
+                "mape": perf["mape"],
+                "ci_bounds": perf.get("ci_bounds", {"ci_fraction": 0.05}),
             }
             if name == "ensemble":
                 entry["weights"] = ensemble_weights
                 entry["model_names"] = list(ensemble_weights.keys())
             if name == "lstm" and "lstm" in training_history:
                 h = training_history["lstm"]
+                best_idx = int(np.argmin(h["val_loss"]))
                 entry["training_history"] = {
-                    "epochs_trained":   len(h["loss"]),
-                    "final_train_loss": round(float(h["loss"][-1]), 6),
-                    "final_val_loss":   round(float(h["val_loss"][-1]), 6),
+                    "epochs_trained": len(h["loss"]),
+                    "best_epoch": best_idx + 1,
+                    "best_train_loss": round(float(h["loss"][best_idx]), 4),
+                    "best_val_loss": round(float(h["val_loss"][best_idx]), 4),
                 }
-            # Embed per-model feature importance and CV scores so app.py
-            # _load_metrics() can find them at models_meta[name]["feature_importance"]
-            # and models_meta[name]["cross_validation"]
-            if name in _fi:
-                entry["feature_importance"] = _fi[name]
-            if name in _cv:
-                entry["cross_validation"] = _cv[name]
+            if name in fi:
+                entry["feature_importance"] = fi[name]
+            if name in cv:
+                entry["cross_validation"] = cv[name]
             meta["models"][name] = entry
-
-        # BOM baseline (approximate values based on typical dataset stats)
-        meta["bom_baseline"] = {"rmse": 145.0, "mae": 108.0, "r2": 0.74, "mape": 9.2}
 
         out = self.config.MODEL_PATH / "model_metadata.json"
         with open(out, "w") as fh:
             json.dump(meta, fh, indent=2)
-        logger.info(f"  ✅ model_metadata.json")
-        return str(out)
+        logger.info("    Saved model_metadata.json")
+        return out
 
-    @staticmethod
-    def _model_type(name: str) -> str:
-        return {
-            "xgboost":           "xgboost.XGBRegressor",
-            "random_forest":     "sklearn.ensemble.RandomForestRegressor",
-            "linear_regression": "sklearn.linear_model.LinearRegression",
-            "lstm":              "tensorflow.keras.Sequential",
-            "ensemble":          "weighted_average_ensemble",
-        }.get(name, "unknown")
+
+# ============================================================================
+# PRETTY PRINT
+# ============================================================================
+def _print_table(performance):
+    print(
+        "\n"
+        "+---------------------+------------+----------+---------+----------+\n"
+        "| Model               |  RMSE (yd) |  MAE(yd) |   R2    |   MAPE   |\n"
+        "+---------------------+------------+----------+---------+----------+"
+    )
+    for name, m in performance.items():
+        label = name.replace("_", " ").title()
+        print(
+            f"| {label:<19} | {m['rmse']:>10.3f} | "
+            f"{m['mae']:>8.3f} | {m['r2']:>7.4f} | {m['mape']:>7.2f}% |"
+        )
+    print("+---------------------+------------+----------+---------+----------+")
+
+
+# ============================================================================
+# CROSS-VALIDATION HELPER
+# ============================================================================
+def _mape_scorer(y_true, y_pred):
+    safe = np.where(y_true == 0, 1, y_true)
+    return float(np.mean(np.abs((y_true - y_pred) / safe)) * 100)
 
 
 # ============================================================================
 # MAIN PIPELINE
 # ============================================================================
-
-def print_performance_table(performance: dict):
-    print("\n┌─────────────────────┬────────────┬──────────┬─────────┬──────────┐")
-    print("│ Model               │    RMSE    │   MAE    │    R²   │   MAPE   │")
-    print("├─────────────────────┼────────────┼──────────┼─────────┼──────────┤")
-    for name, m in performance.items():
-        label = name.replace("_", " ").title()
-        print(f"│ {label:<19} │ {m['rmse']:>10.3f} │ {m['mae']:>8.3f} │ {m['r2']:>7.4f} │ {m['mape']:>7.2f}% │")
-    print("└─────────────────────┴────────────┴──────────┴─────────┴──────────┘")
-
-
-def main() -> bool:
-    logger.info("=" * 80)
-    logger.info("FABRIC CONSUMPTION FORECASTING — MODEL TRAINING  v3.0.0")
-    logger.info("  Target UOM       : yards")
-    logger.info("  Dataset          : 5,000 orders")
-    logger.info(f"  TensorFlow       : {'available' if TENSORFLOW_AVAILABLE else 'NOT available (LSTM skipped)'}")
-    logger.info("=" * 80)
+def main():
+    bar = "=" * 70
+    logger.info(bar)
+    logger.info("  FABRIC CONSUMPTION FORECASTING — MODEL TRAINING  v3.0.0")
+    logger.info(
+        f"  TensorFlow : "
+        f"{'available (LSTM enabled)' if TENSORFLOW_AVAILABLE else 'NOT found (LSTM skipped)'}"
+    )
+    logger.info(f"  Python     : {sys.version.split()[0]}")
+    logger.info(f"  NumPy      : {np.__version__}")
+    logger.info(f"  Pandas     : {pd.__version__}")
+    logger.info(f"  XGBoost    : {xgb.__version__}")
+    logger.info(bar)
 
     try:
-        config      = TrainingConfig()
-        preprocessor = DataPreprocessor(config)
-        trainer     = ModelTrainer(config)
-        saver       = ModelSaver(config)
+        cfg = TrainingConfig()
+        preprocessor = DataPreprocessor(cfg)
+        trainer = ModelTrainer(cfg)
+        saver = ModelSaver(cfg)
 
-        # ── Step 1: Load & preprocess ────────────────────────────────────
-        logger.info("\n📥 STEP 1 — Load & Preprocess Data")
-        logger.info("-" * 80)
+        # STEP 1  Load & preprocess
+        logger.info("\n  STEP 1 — Load & Preprocess")
         df = preprocessor.load_data()
         df = preprocessor.preprocess(df)
+        X = df[cfg.FEATURES].values.astype(np.float32)
+        y = df[cfg.TARGET].values.astype(np.float32)
+        logger.info(f"  X shape: {X.shape}   y shape: {y.shape}")
 
-        X = df[config.FEATURES].values
-        y = df[config.TARGET].values
-        logger.info(f"  Features : {X.shape}  Target : {y.shape}")
-
-        # ── Step 2: Split ────────────────────────────────────────────────
-        logger.info("\n✂️  STEP 2 — Split Data (64% train / 16% val / 20% test)")
-        logger.info("-" * 80)
-        X_tmp, X_te, y_tmp, y_te = train_test_split(
-            X, y, test_size=config.TEST_SIZE, random_state=config.RANDOM_STATE
+        # STEP 2  Split
+        logger.info("\n  STEP 2 — Split  (64% train / 16% val / 20% test)")
+        indices = np.arange(len(df))
+        X_tmp, X_te, y_tmp, y_te, idx_tmp, idx_te = train_test_split(
+            X,
+            y,
+            indices,
+            test_size=cfg.TEST_SIZE,
+            random_state=cfg.RANDOM_STATE,
         )
-        X_tr, X_v, y_tr, y_v = train_test_split(
-            X_tmp, y_tmp, test_size=config.VAL_SIZE, random_state=config.RANDOM_STATE
+        X_tr, X_v, y_tr, y_v, idx_tr, idx_v = train_test_split(
+            X_tmp,
+            y_tmp,
+            idx_tmp,
+            test_size=cfg.VAL_SIZE,
+            random_state=cfg.RANDOM_STATE,
         )
-        logger.info(f"  Train   : {len(X_tr):,} rows  ({len(X_tr)/len(X)*100:.1f}%)")
-        logger.info(f"  Val     : {len(X_v):,} rows  ({len(X_v)/len(X)*100:.1f}%)")
-        logger.info(f"  Test    : {len(X_te):,} rows  ({len(X_te)/len(X)*100:.1f}%)")
+        logger.info(f"  Train {len(X_tr):,}  Val {len(X_v):,}  Test {len(X_te):,}")
 
-        # ── Step 3: Scale ────────────────────────────────────────────────
-        logger.info("\n📊 STEP 3 — Feature Scaling (StandardScaler)")
-        logger.info("-" * 80)
+        # STEP 2b  Empirical BOM baseline
+        test_df_raw = df.iloc[idx_te]
+        bom_base_m = test_df_raw["garment_type"].map(cfg.GARMENT_BASE_M)
+        bom_base_m = bom_base_m * (160.0 / test_df_raw["fabric_width_cm"])
+        bom_base_m = bom_base_m * test_df_raw["pattern_complexity"].map(
+            cfg.COMPLEXITY_MULTIPLIER
+        )
+        bom_pred_yd = (
+            test_df_raw["order_quantity"] * bom_base_m * 1.05 * cfg.METERS_TO_YARDS
+        ).values
+        bom_actual = y_te.astype(np.float64)
+        bom_rmse = float(np.sqrt(mean_squared_error(bom_actual, bom_pred_yd)))
+        bom_mae = float(mean_absolute_error(bom_actual, bom_pred_yd))
+        bom_r2 = float(r2_score(bom_actual, bom_pred_yd))
+        bom_mape = float(
+            np.mean(
+                np.abs(
+                    (bom_actual - bom_pred_yd)
+                    / np.where(bom_actual == 0, 1, bom_actual)
+                )
+            )
+            * 100
+        )
+        bom_baseline = {
+            "rmse": round(bom_rmse, 1),
+            "mae": round(bom_mae, 1),
+            "r2": round(bom_r2, 4),
+            "mape": round(bom_mape, 2),
+        }
+        logger.info(
+            f"  BOM Baseline  RMSE={bom_rmse:.1f} yd  MAE={bom_mae:.1f} yd  "
+            f"R2={bom_r2:.4f}  MAPE={bom_mape:.2f}%"
+        )
+
+        # STEP 3  Scale
+        logger.info("\n  STEP 3 — StandardScaler")
         X_tr_s = preprocessor.scale(X_tr, fit=True)
-        X_v_s  = preprocessor.scale(X_v,  fit=False)
-        X_te_s = preprocessor.scale(X_te, fit=False)
-        logger.info(f"  Scaled mean≈{X_tr_s.mean():.6f}  std≈{X_tr_s.std():.6f}")
+        X_v_s = preprocessor.scale(X_v)
+        X_te_s = preprocessor.scale(X_te)
 
-        # ── Step 4: Train ────────────────────────────────────────────────
-        logger.info("\n🤖 STEP 4 — Train Models")
-        logger.info("-" * 80)
-
-        # Pass pandas Series for y_te so evaluate() can call .values cleanly
-        y_te_series = pd.Series(y_te)
+        # STEP 4  Train
+        logger.info("\n  STEP 4 — Train Models")
+        y_te_series = pd.Series(y_te.astype(np.float64))
         models, performance = trainer.train_all(
             X_tr_s, y_tr, X_v_s, y_v, X_te_s, y_te_series
         )
 
-        # ── Step 5: Print performance table ─────────────────────────────
-        logger.info("\n📈 STEP 5 — Performance Summary (yards)")
-        logger.info("-" * 80)
-        print_performance_table(performance)
-
-        best = min(
-            ((n, m) for n, m in performance.items() if n != "ensemble"),
+        # STEP 5a  Performance table
+        logger.info("\n  STEP 5a — Performance Summary (yards, held-out test set)")
+        _print_table(performance)
+        best_name, best_p = min(
+            ((n, p) for n, p in performance.items() if n != "ensemble"),
             key=lambda x: x[1]["rmse"],
         )
-        logger.info(f"\n  🏆 Best single model: {best[0].upper()}  (RMSE={best[1]['rmse']:.3f} yd)")
+        logger.info(
+            f"\n  Best single model: {best_name.upper()}  RMSE={best_p['rmse']:.3f} yd"
+        )
 
-        # ── Step 5b: 5-fold Cross-validation (LR, RF, XGB only) ────────
-        logger.info("\n🔁 STEP 5b — 5-Fold Cross-Validation")
-        logger.info("-" * 80)
-
+        # STEP 5b  5-fold Cross-Validation (LR / RF / XGB)
+        # NOTE: CV runs on train+val only (80% of data) to keep test set
+        # completely held-out and avoid any data leakage into CV scores.
+        logger.info("\n  STEP 5b — 5-Fold Cross-Validation (LR / RF / XGB, train+val only)")
         cv_scores = {}
-        kf = KFold(n_splits=5, shuffle=True, random_state=config.RANDOM_STATE)
-        # Use full scaled dataset for CV
-        X_all_s = np.vstack([X_tr_s, X_v_s, X_te_s])
-        y_all   = np.concatenate([y_tr, y_v, y_te_series.values])
+        kf = KFold(n_splits=5, shuffle=True, random_state=cfg.RANDOM_STATE)
+        X_cv = np.vstack([X_tr_s, X_v_s])
+        y_cv = np.concatenate([y_tr, y_v])
 
-        # Display label → internal model key (matches app.py _load_metrics keys)
         cv_candidates = {
-            "Linear Regression": "linear_regression",
-            "Random Forest":     "random_forest",
-            "XGBoost":           "xgboost",
+            "linear_regression": models.get("linear_regression"),
+            "random_forest": models.get("random_forest"),
+            "xgboost": models.get("xgboost"),
         }
-        for label, cv_name in cv_candidates.items():
-            m = models.get(cv_name)
+        for cv_name, m in cv_candidates.items():
             if m is None:
                 continue
-            rmse_folds = -cross_val_score(m, X_all_s, y_all, cv=kf,
-                                          scoring="neg_root_mean_squared_error", n_jobs=-1)
-            r2_folds   = cross_val_score(m, X_all_s, y_all, cv=kf,
-                                         scoring="r2", n_jobs=-1)
-            # MAPE via custom scorer
-            from sklearn.metrics import make_scorer
-            def _mape(y_true, y_pred):
-                return float(np.mean(np.abs((y_true - y_pred) / np.where(y_true==0, 1, y_true))) * 100)
-            mape_folds = cross_val_score(m, X_all_s, y_all, cv=kf,
-                                         scoring=make_scorer(_mape, greater_is_better=False),
-                                         n_jobs=-1)
-            mape_folds = -mape_folds
-
-            cv_scores[label] = {
-                "rmse_mean":  round(float(np.mean(rmse_folds)), 3),
-                "rmse_std":   round(float(np.std(rmse_folds)),  3),
-                "r2_mean":    round(float(np.mean(r2_folds)),   4),
-                "r2_std":     round(float(np.std(r2_folds)),    4),
-                "mape_mean":  round(float(np.mean(mape_folds)), 2),
-                "mape_std":   round(float(np.std(mape_folds)),  2),
-                "folds_rmse": [round(f, 3) for f in rmse_folds.tolist()],
+            rmse_folds = -cross_val_score(
+                m, X_cv, y_cv, cv=kf, scoring="neg_root_mean_squared_error", n_jobs=-1
+            )
+            r2_folds = cross_val_score(m, X_cv, y_cv, cv=kf, scoring="r2", n_jobs=-1)
+            mape_folds = -cross_val_score(
+                m,
+                X_cv,
+                y_cv,
+                cv=kf,
+                scoring=make_scorer(_mape_scorer, greater_is_better=False),
+                n_jobs=-1,
+            )
+            cv_scores[cv_name] = {
+                "rmse_mean": round(float(rmse_folds.mean()), 3),
+                "rmse_std": round(float(rmse_folds.std()), 3),
+                "r2_mean": round(float(r2_folds.mean()), 4),
+                "r2_std": round(float(r2_folds.std()), 4),
+                "mape_mean": round(float(mape_folds.mean()), 2),
+                "mape_std": round(float(mape_folds.std()), 2),
+                "folds_rmse": [round(float(f), 3) for f in rmse_folds.tolist()],
             }
             logger.info(
-                f"  {label:<20}  RMSE={np.mean(rmse_folds):.3f}±{np.std(rmse_folds):.3f}  "
-                f"R²={np.mean(r2_folds):.4f}±{np.std(r2_folds):.4f}  "
-                f"MAPE={np.mean(mape_folds):.2f}±{np.std(mape_folds):.2f}%"
+                f"  {cv_name:<22}  RMSE={rmse_folds.mean():.3f}+/-{rmse_folds.std():.3f}  "
+                f"R2={r2_folds.mean():.4f}  MAPE={mape_folds.mean():.2f}%"
             )
 
-        # Convert cv_scores from display-label keys to internal-name keys for embedding
-        _label_to_internal = {v: k for k, v in {
-            "xgboost": "XGBoost", "random_forest": "Random Forest",
-            "linear_regression": "Linear Regression"}.items()}
-        cv_scores_by_internal = {
-            _label_to_internal[lbl]: data
-            for lbl, data in cv_scores.items()
-            if lbl in _label_to_internal
-        }
-        # Also keep label-keyed version for the save_metadata top-level field
-        cv_scores_by_label = cv_scores
-        cv_scores = cv_scores_by_internal
-
-        # ── Step 5c: Feature importance ──────────────────────────────────
-        logger.info("\n🌲 STEP 5c — Feature Importance")
-        logger.info("-" * 80)
-
-        feature_names = config.FEATURES
+        # STEP 5c  Feature Importance
+        logger.info("\n  STEP 5c — Feature Importance")
         feature_importance = {}
+        for fi_name in ("xgboost", "random_forest"):
+            m = models.get(fi_name)
+            if m is not None and hasattr(m, "feature_importances_"):
+                fi = m.feature_importances_.tolist()
+                feature_importance[fi_name] = {
+                    fn: round(float(v), 6) for fn, v in zip(cfg.FEATURES, fi)
+                }
+                top3 = sorted(zip(cfg.FEATURES, fi), key=lambda x: x[1], reverse=True)[
+                    :3
+                ]
+                logger.info(
+                    f"  {fi_name}: " + ", ".join(f"{n}={v:.4f}" for n, v in top3)
+                )
 
-        xgb_model = models.get("xgboost")
-        if xgb_model is not None and hasattr(xgb_model, "feature_importances_"):
-            fi = xgb_model.feature_importances_.tolist()
-            feature_importance["xgboost"] = {
-                fn: round(float(v), 6) for fn, v in zip(feature_names, fi)
-            }
-            top = sorted(zip(feature_names, fi), key=lambda x: x[1], reverse=True)[:3]
-            logger.info("  XGBoost top-3: " + ", ".join(f"{n}={v:.4f}" for n, v in top))
-
-        rf_model = models.get("random_forest")
-        if rf_model is not None and hasattr(rf_model, "feature_importances_"):
-            fi = rf_model.feature_importances_.tolist()
-            feature_importance["random_forest"] = {
-                fn: round(float(v), 6) for fn, v in zip(feature_names, fi)
-            }
-            top = sorted(zip(feature_names, fi), key=lambda x: x[1], reverse=True)[:3]
-            logger.info("  RandomForest top-3: " + ", ".join(f"{n}={v:.4f}" for n, v in top))
-
-        # ── Step 6: Save models ─────────────────────────────────────────
-        logger.info("\n💾 STEP 6 — Save Models")
-        logger.info("-" * 80)
-
+        # STEP 6  Save
+        logger.info("\n  STEP 6 — Save Models & Artefacts")
         for name, model in models.items():
             if name == "ensemble":
-                saver.save(model, "ensemble_model.pkl")
+                saver.save_pkl(model, "ensemble_model.pkl")
             elif name == "lstm" and TENSORFLOW_AVAILABLE:
                 saver.save_keras(model, "lstm_model.h5")
             else:
-                saver.save(model, f"{name}_model.pkl")
+                saver.save_pkl(model, f"{name}_model.pkl")
 
-        saver.save(preprocessor.scaler,        "scaler.pkl")
-        saver.save(preprocessor.label_encoders,"label_encoders.pkl")
-
-        ensemble_weights = models["ensemble"]["weights"]
+        saver.save_pkl(preprocessor.scaler, "scaler.pkl")
+        saver.save_pkl(preprocessor.label_encoders, "label_encoders.pkl")
         saver.save_metadata(
             performance,
             preprocessor,
-            ensemble_weights,
+            models["ensemble"]["weights"],
             trainer.history,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             cv_scores=cv_scores,
             feature_importance=feature_importance,
+            bom_baseline=bom_baseline,
         )
 
-        # ── Step 7: Verify files ─────────────────────────────────────────
-        logger.info("\n✅ STEP 7 — Verify Saved Files")
-        logger.info("-" * 80)
-
+        # STEP 7  Verify
+        logger.info("\n  STEP 7 — Verify Saved Files")
         expected = [
             "xgboost_model.pkl",
             "random_forest_model.pkl",
@@ -797,41 +869,48 @@ def main() -> bool:
 
         all_ok = True
         for fn in expected:
-            p = config.MODEL_PATH / fn
-            if p.exists():
-                logger.info(f"  ✅ {fn:<35} ({p.stat().st_size/1024:>8.1f} KB)")
+            fp = cfg.MODEL_PATH / fn
+            if fp.exists():
+                logger.info(f"  OK {fn:<38} ({fp.stat().st_size / 1024:>8.1f} KB)")
             else:
-                logger.error(f"  ❌ MISSING: {fn}")
+                logger.error(f"  MISSING: {fn}")
                 all_ok = False
 
         if not all_ok:
-            raise FileNotFoundError("One or more model files are missing.")
+            raise FileNotFoundError("One or more model files are missing after saving.")
 
-        # ── Done ─────────────────────────────────────────────────────────
-        logger.info("\n" + "=" * 80)
-        logger.info("🎉 TRAINING COMPLETED SUCCESSFULLY")
-        logger.info("=" * 80)
-        logger.info(f"  Models saved to  : {config.MODEL_PATH.absolute()}/")
-        logger.info(f"  Target unit      : yards")
-        logger.info(f"  Features         : {len(config.FEATURES)}  ({', '.join(config.FEATURES)})")
-        logger.info(f"  Best model       : {best[0].upper()}  RMSE={best[1]['rmse']:.3f} yd")
-        logger.info("  App is ready for PRODUCTION mode ✅")
+        # Done
+        logger.info(f"\n{bar}")
+        logger.info("  TRAINING COMPLETED SUCCESSFULLY")
+        logger.info(f"  Models saved to : {cfg.MODEL_PATH.absolute()}/")
+        logger.info(
+            f"  Best model      : {best_name.upper()}  RMSE={best_p['rmse']:.3f} yd"
+        )
+        logger.info("  Run the app     : streamlit run app.py")
+        logger.info(bar)
+
         if not TENSORFLOW_AVAILABLE:
-            logger.warning("\n  ⚠️  LSTM not trained — install TensorFlow to enable:")
-            logger.warning("       pip install tensorflow")
+            logger.warning(
+                "\n  LSTM was NOT trained (TensorFlow not installed).\n"
+                "  Install:  pip install tensorflow==2.13.0\n"
+                "  Then re-run:  python train_models.py\n"
+            )
 
         return True
 
+    except FileNotFoundError as exc:
+        logger.error(f"\n  ERROR: {exc}")
+        return False
     except Exception as exc:
-        import traceback
-        logger.error(f"\n❌ TRAINING FAILED: {exc}")
-        logger.error(traceback.format_exc())
+        import traceback as _tb
+
+        logger.error(f"\n  TRAINING FAILED: {exc}")
+        logger.error(_tb.format_exc())
         return False
 
 
 # ============================================================================
 # ENTRY POINT
 # ============================================================================
-
 if __name__ == "__main__":
     sys.exit(0 if main() else 1)

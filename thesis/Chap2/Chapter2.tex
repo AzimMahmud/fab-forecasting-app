@@ -1,0 +1,81 @@
+\chapter{Literature Review}
+\label{ch:lit}
+\sloppy
+\hbadness=8000
+
+\section{Introduction}
+This chapter reviews the existing body of literature that informs the research design and situates the contributions of this thesis within the current state of knowledge. The review covers five thematic areas: (1)~material planning practices in apparel manufacturing and the documented limitations of BOM-based estimation; (2)~the mathematical structure of traditional BOM formulas and their systematic failure modes; (3)~the application of machine learning to manufacturing forecasting more broadly; (4)~prior work specifically addressing fabric consumption prediction using computational methods; and (5)~a structured analysis of the research gaps that this thesis addresses. The chapter concludes with a summary that links the identified gaps to the seven research objectives stated in Chapter~\ref{ch:intro}.
+
+\secdiv
+\section{Material Planning in Apparel Manufacturing}
+Material planning in apparel manufacturing encompasses the processes by which factories determine how much fabric to procure for each production order before the cutting floor begins work. The accuracy of this estimate has direct consequences for profitability, working capital, and production continuity: over-procurement ties up capital in surplus inventory that must be warehoused, insured, and eventually discounted or written off, while under-procurement triggers emergency re-orders that incur price premiums and risk production stoppages if replacement fabric cannot be sourced within the required delivery window.
+
+The foundational empirical work on BOM estimation accuracy was conducted by Rahman et~al.\ \cite{rahman2018fabric}, whose survey of Ready-Made Garment (RMG) factories in Bangladesh documented fabric wastage rates of 8--12\% directly attributable to BOM inaccuracy. The study identified four primary drivers of BOM deviation: inconsistent marker efficiency across cutting plans (ranging from 70\% to 95\% of theoretical yield), variability in operator skill levels between shifts and seasons, fluctuating defect rates across fabric lots from different suppliers, and seasonal fabric weight changes that alter the yield per metre without a corresponding adjustment to the BOM coefficient. Crucially, the BOM formula used across the surveyed factories did not account for any of these sources of variance---it applied a single static coefficient per garment type regardless of order-specific conditions.
+
+Chowdhury et~al.\ \cite{chowdhury2020wastage} extended this analysis to Sri Lankan factories, reporting mean absolute percentage errors of 9--15\% in planned versus actual fabric consumption and specifically identifying fabric width variability as an unaddressed error source. Fabric from the same supplier can vary by 1--3 cm in usable width between lots, a variation that the standard BOM formula ignores but that translates into meaningful yield differences for large orders. Together, these studies establish that BOM inaccuracy is a documented, industry-wide problem rather than a factory-specific anomaly, and that the error rates are large enough to constitute a meaningful economic and environmental impact at scale.
+
+\secdiv
+\section{Traditional BOM Estimation Methods}
+The Bill of Materials formula used across the apparel industry estimates planned fabric consumption from the product of a garment's base fabric requirement, an order quantity multiplier, a width adjustment factor, a complexity correction, and a safety buffer:
+
+\begin{mdframed}[style=eqbox]
+\begin{equation}
+\text{Planned\_BOM} = Q \times b_g \times \frac{W_{\text{std}}}{W_{\text{actual}}} \times c_p \times (1+\alpha)\label{eq:bom}
+\end{equation}
+\end{mdframed}
+
+\noindent where $Q$ is order quantity, $b_g$ is the garment-type base consumption coefficient (e.g., T-Shirt 1.20\,m, Shirt 1.80\,m, Pants 2.50\,m, Dress 3.00\,m, Jacket 3.50\,m at 63-inch (160\,cm) standard width), $W_{\text{std}}/W_{\text{actual}}$ is a width normalisation factor, $c_p$ is a pattern complexity multiplier, and $\alpha$ is a fixed safety buffer, typically set at 0.05 (5\%).
+
+This formula has two structural limitations that produce the systematic bias documented in the literature. First, the base coefficient $b_g$ is defined at a single standard fabric width and does not account for the non-linear relationship between order size and cutting efficiency: as order quantity increases, cutting plans are optimised across more marker lays, improving marker efficiency and reducing per-unit fabric consumption below the standard coefficient. Conversely, very small orders are cut from fewer lays with less marker optimisation, increasing per-unit consumption above the standard coefficient. The BOM formula applies the same coefficient regardless of order size, producing a directional over-estimate for large orders and an under-estimate for small orders---a bias pattern confirmed empirically in the variance analysis of this thesis (Section~\ref{sec:variance}).
+
+Second, the safety buffer $\alpha$ is applied uniformly to all orders regardless of their individual risk profile. For large, commodity-fabric orders where yield is highly predictable, a 5\% buffer consistently over-procures. For small, complex orders in unusual fabric constructions where yield is inherently variable, 5\% may be insufficient. A data-driven approach that replaces this uniform buffer with order-specific confidence intervals---derived from the empirical residual distribution of a trained model---would provide more accurate procurement guidance tailored to each order's characteristics.
+
+\secdiv
+\section{Machine Learning in Manufacturing Forecasting}
+The application of machine learning to production forecasting problems in manufacturing has expanded substantially over the past decade, driven by the increasing availability of operational data from ERP and production management systems.
+
+Gradient boosting, and specifically the XGBoost algorithm introduced by Chen and Guestrin \cite{chen2016xgboost}, has become the standard benchmark for structured tabular regression in manufacturing contexts. XGBoost constructs an additive ensemble of decision trees in which each successive tree is trained to correct the residual errors of the preceding ensemble, using a regularised objective function that prevents overfitting. Its ability to handle non-linear feature interactions, missing values, and feature importance estimation has made it the predominant algorithm for demand forecasting, quality prediction, and maintenance scheduling tasks where structured tabular data is the primary input modality.
+
+Random Forest, introduced by Breiman \cite{breiman2001random}, provides a complementary ensemble approach based on bootstrap aggregating (bagging) of independent decision trees rather than the sequential boosting structure of XGBoost. Random Forest is notable for its stability and low variance: the independence of its component trees means that errors in individual trees tend to cancel in the aggregate, producing reliable performance estimates even on relatively small training sets. In manufacturing forecasting applications, Random Forest has been widely used as a robust baseline against which gradient boosting and deep learning improvements are measured.
+
+Recurrent neural networks, and in particular the Long Short-Term Memory architecture introduced by Hochreiter and Schmidhuber \cite{hochreiter1997long}, are the standard architecture for sequence modelling tasks where temporal dependencies between successive observations carry predictive information. While the fabric consumption prediction task in this thesis is formulated as a tabular regression problem rather than a time-series prediction problem, the LSTM's gated architecture and its ability to model complex non-linear interactions within a single-timestep input vector have been shown in related manufacturing contexts to capture latent feature interactions that gradient boosting misses. This thesis demonstrates empirically that, even in a single-timestep tabular configuration, the LSTM achieves lower RMSE than XGBoost on the fabric consumption test set.
+
+\secdiv
+\section{Related Work in Fabric Consumption Prediction}
+Prior work specifically addressing ML-based fabric consumption prediction is sparse relative to the breadth of ML application in manufacturing generally. The most directly comparable study is Pal et~al.\ \cite{pal2022gradient}, which applied XGBoost to production data from five Bangladeshi garment factories, achieving RMSE of 4.12\,m and MAPE of 6.8\%. This study represents the current published state of the art for tree-based methods on factory-level data and provides the primary external benchmark against which the XGBoost model in this thesis is evaluated. However, Pal et~al.\ do not provide a deployable system, do not report confidence intervals, and do not quantify the economic or environmental impact of their model's accuracy improvement.
+
+Islam et~al.\ \cite{islam2021ann} applied an Artificial Neural Network (ANN) to a knitwear consumption dataset, achieving MAPE of 7.2\%. The ANN architecture evaluated in that study used a single hidden layer and was not compared against gradient boosting methods; it also did not address the fabric-type or seasonal heterogeneity in forecasting difficulty that is a central finding of the current work.
+
+Hossain et~al.\ \cite{hossain2020seasonal} specifically examined seasonal variation in fabric consumption forecasting and documented that winter-season MAPE was approximately 15\% above summer-season MAPE across their study population of factories---a seasonal differential qualitatively consistent with the 37\% winter-to-spring MAPE gap identified in this thesis through controlled segmented analysis on the synthetic dataset.
+
+Across all prior studies, a consistent limitation is the absence of an end-to-end deployed system. Forecasting accuracy improvements are reported as experimental outcomes but not translated into operational tools that procurement planners can use without data science expertise. Additionally, no prior study reports performance in yards---the operational unit used for fabric ordering in South and South-East Asian factories---or provides integrated ROI quantification, leaving decision-makers without the economic evidence needed to justify the investment in ML adoption.
+
+\secdiv
+\section{Research Gap Analysis}
+The review of the literature identifies five specific gaps that the current thesis addresses.
+
+\textbf{Gap 1: Absence of a four-way controlled model comparison.} Existing fabric consumption prediction studies evaluate one or two models. No published work has conducted a four-way comparison of Linear Regression, Random Forest, XGBoost, and LSTM under identical preprocessing, data splitting, and evaluation conditions on the same dataset. Such a comparison is necessary to establish whether deep learning provides a material advantage over the best classical methods for this specific regression task.
+
+\textbf{Gap 2: No end-to-end deployed system with confidence intervals and ROI quantification.} All prior work reports model accuracy in experimental settings but does not provide a deployable system. The absence of confidence interval displays, batch processing capability, and integrated ROI estimation means that even accurate models cannot be directly adopted by procurement teams, limiting the practical impact of published research.
+
+\textbf{Gap 3: No seasonal and fabric-type segmented performance analysis.} While Hossain et~al.\ \cite{hossain2020seasonal} noted seasonal variation in forecast error, no prior study has conducted a controlled segmented analysis that simultaneously examines performance across both seasonal and fabric-type dimensions on the same model and dataset. Such analysis is essential for identifying where model predictions should be treated with additional caution and where model retraining would have the greatest marginal benefit.
+
+\textbf{Gap 4: No quantified business and environmental impact.} The economic and environmental implications of ML-based forecasting adoption are not quantified in any prior fabric consumption study. Procurement decision-makers require a credible, dataset-derived business case---including payback period, NPV, and waste reduction estimates---to justify the investment, and the absence of such analysis in the literature limits industry uptake.
+
+\textbf{Gap 5: No yards-based performance benchmark.} All published RMSE figures are reported in metres. In South and South-East Asian garment manufacturing, fabric is ordered, issued, and accounted for in yards. A yards-based benchmark enables direct comparison of model accuracy against the procurement quantities that actually flow through factory ERP systems.
+
+\secdiv
+\section{Challenges in Material Forecasting}
+Beyond the specific gaps identified above, several cross-cutting challenges in apparel material forecasting deserve consideration as they inform the design choices made in the methodology chapter.
+
+Data heterogeneity presents a significant challenge: a single factory's production programme spans multiple garment types, fabric categories, seasonal windows, and order size ranges, each with different consumption distributions. A model trained on the full dataset must generalise across these sub-populations simultaneously, which motivates the segmented analysis in Chapter~\ref{ch:results} that diagnoses where the global model performs least reliably.
+
+Non-stationarity arises from the evolution of garment styles, fabric supplier portfolios, and production process improvements over time. A model trained on historical production data may degrade in accuracy as the distribution of future orders shifts away from the training distribution, motivating the single-command retraining capability (\texttt{python train\_models.py}) built into the deployment architecture and the recommendation for seasonal model recalibration in Chapter~\ref{ch:conclusion}.
+
+Multiplicative feature interactions---particularly the interaction between garment type and order quantity that drives the non-linear consumption curve---require model architectures that can represent non-linear relationships. This motivates the inclusion of XGBoost and LSTM alongside Linear Regression, and the feature importance analysis in Section~\ref{sec:fi} that quantifies the relative contribution of each feature to XGBoost's predictions.
+
+Interpretability is a deployment challenge specific to the ML context: procurement planners who are accustomed to the transparent arithmetic of the BOM formula may be reluctant to act on predictions from a model whose internal workings they cannot inspect. The Streamlit application addresses this challenge through a dedicated feature importance module, confidence interval displays, and a model performance overview that allows planners to understand when and why the ML prediction diverges from the BOM estimate.
+
+\secdiv
+\section{Summary}
+The literature establishes that static BOM estimation is systematically inaccurate in apparel manufacturing, with documented wastage rates of 8--12\% and MAPE of 9--15\% across multiple factory studies. Machine learning methods---particularly gradient boosting and deep learning architectures---are capable of substantially improving upon BOM accuracy on structured tabular production data, as demonstrated in prior work achieving MAPE of 6.8--7.2\% with XGBoost and ANN respectively. However, five gaps remain unaddressed in the published literature: the absence of a four-way controlled model comparison; no end-to-end deployed system with confidence intervals and ROI quantification; no segmented seasonal and fabric-type analysis; no quantified business and environmental impact; and the lack of a yards-based benchmark. These five gaps define the original contributions of this thesis, which are addressed through the methodology, experimental results, impact assessment, and Streamlit deployment described in the chapters that follow.

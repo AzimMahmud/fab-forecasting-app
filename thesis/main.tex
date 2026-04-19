@@ -1,0 +1,190 @@
+\documentclass[12pt,oneside]{report}
+
+\usepackage[table]{xcolor}
+\usepackage{rac}
+
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{setspace}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{float}
+\usepackage{mdframed}
+\usepackage{enumitem}
+\usepackage[
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    citecolor=blue!60!black,
+    urlcolor=blue!70!black,
+    bookmarks=true,
+    pdfauthor={Md Azim},
+    pdftitle={Fabric Consumption Forecasting in Apparel Manufacturing Using Machine Learning},
+    pdfpagelayout=SinglePage
+]{hyperref}
+
+\pdfstringdefDisableCommands{%
+    \def\textsuperscript#1{#1}%
+}
+
+\definecolor{tableheadbg}{gray}{0.92}
+\definecolor{eqboxcolor}{gray}{0.04}
+\definecolor{findingborder}{RGB}{70,130,180}
+
+\newcolumntype{Z}{>{\centering\arraybackslash}X}
+\newcolumntype{Y}{>{\centering\arraybackslash}X}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\newcommand{\tblhdr}[1]{\textbf{#1}}
+
+\mdfdefinestyle{eqbox}{
+    linewidth=0.6pt,
+    linecolor=eqboxcolor,
+    backgroundcolor=gray!4,
+    roundcorner=2pt,
+    innertopmargin=8pt,
+    innerbottommargin=8pt,
+    innerleftmargin=8pt,
+    innerrightmargin=8pt,
+    skipabove=8pt,
+    skipbelow=8pt
+}
+
+\mdfdefinestyle{findingbox}{
+    linewidth=1pt,
+    linecolor=findingborder,
+    backgroundcolor=blue!2,
+    roundcorner=3pt,
+    innertopmargin=10pt,
+    innerbottommargin=10pt,
+    innerleftmargin=12pt,
+    innerrightmargin=12pt,
+    skipabove=10pt,
+    skipbelow=10pt
+}
+
+\makeatletter
+
+\def\vertadjust{\vspace{-0.35in}}
+\def\twoinmar{\vertadjust\vspace{0.4in}}
+\def\twohalfinmar{\vertadjust\vspace{0.7in}}
+
+\def\startcertificatepage{%
+  \newpage
+  \addcontentsline{toc}{chapter}{CERTIFICATE}%
+  \hbox{ }\twoinmar
+  \centerline{\large\bf CERTIFICATE}%
+  \vspace{0.3in}%
+}
+\def\startdeclarationpage{%
+  \newpage
+  \addcontentsline{toc}{chapter}{DECLARATION}%
+  \hbox{ }\twoinmar
+  \centerline{\large\bf DECLARATION}%
+  \vspace{0.3in}%
+}
+\def\startacknowledgementspage{%
+  \newpage
+  \addcontentsline{toc}{chapter}{ACKNOWLEDGEMENTS}%
+  \hbox{ }\twoinmar
+  \centerline{\large\bf ACKNOWLEDGEMENTS}%
+  \vspace{0.3in}%
+}
+\def\startabstractpage{%
+  \newpage
+  \addcontentsline{toc}{chapter}{ABSTRACT}%
+  \hbox{ }\twoinmar
+  \centerline{\large\bf ABSTRACT}%
+  \vspace{0.3in}%
+}
+
+\def\listofabbreviations{%
+  \newpage
+  \addcontentsline{toc}{chapter}{LIST OF ABBREVIATIONS}%
+}
+
+\def\@makechapterhead#1{%
+  \hbox{ }
+  \vertadjust\vspace{0.2in}%
+  {\parindent 0pt \raggedright
+   \ifnum \c@secnumdepth >\m@ne
+   \centerline{\large\bf \@chapapp{} \thechapter} \par
+   \vskip 0.15in \fi
+   \begin{center}
+    \Large\bf #1
+   \end{center}
+   \nobreak \vskip 0.3in
+  }%
+  \@afterindenttrue
+}
+
+\long\def\@makecaption#1#2{%
+  \vskip 10pt
+  \setbox\@tempboxa\hbox{{\small #1: }{\small #2}}%
+  \ifdim \wd\@tempboxa >\hsize
+    \begin{minipage}{\hsize}%
+      {\small #1: }{\small #2}%
+    \end{minipage}%
+  \else
+    \hbox to\hsize{\hfil\box\@tempboxa\hfil}%
+  \fi}
+
+\makeatother
+
+\newcommand{\secdiv}{\vspace{0.8ex}\noindent\textcolor{gray!50}{\rule{\textwidth}{0.3pt}}\vspace{0.8ex}}
+
+\graphicspath{{./}}
+
+\begin{document}
+
+\titlepage{Fabric Consumption Forecasting in Apparel Manufacturing Using Machine Learning}
+  {243015}
+  {}
+  {}
+  {January 2026}
+  {Dr. Jesmin Akhter}
+
+\initializefrontsections
+
+\frontispiece
+
+\startcertificatepage
+\input{FrontMatter/certificate}
+
+\startdeclarationpage
+\input{FrontMatter/declaration}
+
+\startacknowledgementspage
+\input{FrontMatter/Acknowledgements}
+
+\startabstractpage
+\input{Abstract/Abstract}
+
+\producetableofcontents
+
+\producelistoffigures
+
+\producelistoftables
+
+\listofabbreviations
+\input{FrontMatter/Abbreviations}
+
+\startthechapters
+
+\input{Chap1/Chapter1}
+\input{Chap2/Chapter2}
+\input{Chap3/Chapter3}
+\input{Chap4/Chapter4}
+\input{Chap5/Chapter5}
+\input{Chap6/Chapter6}
+
+\startbibliography
+\input{References/references}
+
+\input{Appendices/Appendices}
+
+\end{document}

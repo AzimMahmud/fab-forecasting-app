@@ -1,0 +1,17 @@
+{\bf Figure}\hfill {\bf Page}\par \vskip 5pt
+\contentsline {figure}{\numberline {3.1}{\ignorespaces Proposed System Architecture for Material Forecasting}}{13}{figure.3.1}%
+\contentsline {figure}{\numberline {3.2}{\ignorespaces Research Methodology Flowchart}}{14}{figure.3.2}%
+\contentsline {figure}{\numberline {3.3}{\ignorespaces Data Preprocessing Pipeline (4 sequential steps)}}{17}{figure.3.3}%
+\contentsline {figure}{\numberline {3.4}{\ignorespaces XGBoost Architecture}}{19}{figure.3.4}%
+\contentsline {figure}{\numberline {4.1}{\ignorespaces Forecasting Model RMSE Comparison (yards, 1{,}000-order test set)}}{26}{figure.4.1}%
+\contentsline {figure}{\numberline {4.2}{\ignorespaces Planned vs.\ Actual Consumption Variance (\%) by Order Quantity Range}}{27}{figure.4.2}%
+\contentsline {figure}{\numberline {4.3}{\ignorespaces Feature Importance --- XGBoost Model (higher score = more influential predictor)}}{29}{figure.4.3}%
+\contentsline {figure}{\numberline {4.4}{\ignorespaces Actual vs.\ Predicted Fabric Consumption --- XGBoost vs.\ BOM (20-order sample)}}{30}{figure.4.4}%
+\contentsline {figure}{\numberline {4.5}{\ignorespaces 5-Fold Cross-Validation RMSE (yards) --- LR vs.\ Random Forest vs.\ XGBoost}}{32}{figure.4.5}%
+\contentsline {figure}{\numberline {4.6}{\ignorespaces Prediction Error Distribution --- All Models (Min, P10, Median, P90, Max, yards)}}{33}{figure.4.6}%
+\contentsline {figure}{\numberline {4.7}{\ignorespaces LSTM Training Convergence Curves (183 epochs, best val.\ loss at epoch 168)}}{34}{figure.4.7}%
+\contentsline {figure}{\numberline {4.8}{\ignorespaces Season-wise Forecasting Performance --- XGBoost Model (MAPE \%)}}{35}{figure.4.8}%
+\contentsline {figure}{\numberline {4.9}{\ignorespaces Fabric-wise Forecasting Performance --- XGBoost Model (MAPE \%)}}{36}{figure.4.9}%
+\contentsline {figure}{\numberline {4.10}{\ignorespaces Confidence Interval Coverage for All Models (nominal target: 90\%)}}{37}{figure.4.10}%
+\contentsline {figure}{\numberline {5.1}{\ignorespaces Cost Savings Analysis --- ML System vs.\ Traditional BOM (1{,}000 orders/year)}}{41}{figure.5.1}%
+\contentsline {figure}{\numberline {5.2}{\ignorespaces Environmental Impact Reduction per 1{,}000 Orders (normalised; water is largest)}}{44}{figure.5.2}%

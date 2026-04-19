@@ -23,7 +23,7 @@ address = "0.0.0.0"
 headless = true
 runOnSave = false
 fileWatcherType = "none"
-maxUploadSize = 200
+maxUploadSize = 10
 enableCORS = false
 enableXsrfProtection = false
 

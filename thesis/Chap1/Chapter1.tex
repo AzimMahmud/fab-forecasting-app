@@ -1,0 +1,67 @@
+\chapter{Introduction}
+\label{ch:intro}
+\sloppy
+\hbadness=8000
+
+\section{Overview}
+The global apparel manufacturing industry employs over 75 million people and generates annual revenues exceeding \$1.5 trillion USD \cite{world2023textile}. Within this industry, fabric is the single largest variable cost component, typically representing 60--70\% of total production cost per order \cite{rahman2018fabric}. Even modest inaccuracies in fabric consumption forecasting therefore translate directly into material financial losses: over-procurement locks working capital in warehoused inventory, while under-procurement triggers costly emergency re-orders and mid-production stoppages. Accurate, order-specific fabric consumption forecasting is accordingly one of the highest-leverage operational improvements available to a mid-scale garment factory.
+
+The prevailing industry approach to fabric consumption estimation relies on the Bill of Materials (BOM) formula---a static, physics-derived equation that computes planned fabric requirements from garment pattern dimensions, fabric width, order quantity, and a fixed safety buffer. While the BOM formula is computationally simple and universally understood by procurement teams, its static coefficients are structurally incapable of adapting to the sources of variance that drive actual consumption away from plan: marker efficiency fluctuates between 70\% and 95\% depending on the cutting plan for a given order; operator skill levels vary across shifts and seasons; defect rates differ by fabric lot and supplier; and seasonal fabric weight changes alter yield per metre. Rahman et~al.\ \cite{rahman2018fabric} documented fabric wastage rates of 8--12\% attributable to BOM inaccuracy in Bangladeshi garment factories, representing a substantial and preventable operational cost.
+
+This thesis addresses the limitation of static BOM estimation by developing, evaluating, and deploying a comprehensive machine learning-based fabric consumption forecasting system. The system trains four ML models---Linear Regression (LR), Random Forest (RF), XGBoost, and Long Short-Term Memory (LSTM)---on a 5{,}000-order physics-informed synthetic dataset and combines their predictions in a dynamic weighted-average ensemble. All models are evaluated on a held-out test set of 1{,}000 orders under identical preprocessing and evaluation conditions, enabling a controlled four-way performance comparison. The best single model, the LSTM, achieves a 21.8\% reduction in Root Mean Square Error (RMSE) relative to the BOM baseline---an improvement that translates to \$180{,}000 in annual waste cost savings, a payback period of under four months, and a five-year Net Present Value (NPV) of \$730{,}000 at a reference volume of 1{,}000 orders per year. The complete system is deployed in a six-module Streamlit web application that provides single-order and batch prediction, 90\% confidence intervals, cross-validation visualisation, and an integrated ROI calculator, making ML-grade forecasting accessible to procurement teams without specialist data science infrastructure.
+
+\secdiv
+\section{Research Objectives}
+This thesis pursues seven research objectives, each contributing to the design, evaluation, or deployment of the ML-based forecasting system.
+
+The first objective is to conduct a systematic review of the literature on material planning in apparel manufacturing, traditional BOM estimation methods, the application of machine learning to manufacturing forecasting, and prior fabric consumption prediction studies. This review establishes the research gap and informs the selection of the nine input features used across all models.
+
+The second objective is to design and implement a physics-informed synthetic dataset generator that produces 5{,}000 realistic production orders spanning January~2022 to September~2024, capturing the seasonal variation, garment-type diversity, and order-size distribution characteristic of a mid-scale RMG factory. The generator serves as an open reproducible benchmark for future comparison studies.
+
+The third objective is to train and compare four ML models---Linear Regression, Random Forest, XGBoost, and LSTM---on the generated dataset under identical preprocessing, data splitting, and evaluation conditions, using RMSE, MAE, R\textsuperscript{2}, and MAPE as the primary performance metrics.
+
+The fourth objective is to construct and evaluate a dynamic weighted-average ensemble that combines the four base models using inverse-RMSE\textsuperscript{2} weighting, and to assess whether the ensemble provides accuracy or robustness benefits beyond the best single model.
+
+The fifth objective is to conduct segmented performance analysis across four production seasons (Spring, Summer, Autumn, Winter) and five fabric categories (Cotton, Polyester, Denim, Silk, Cotton-Blend), identifying systematic patterns in forecasting difficulty that inform practical recommendations for model deployment.
+
+The sixth objective is to deploy all trained models within a production-ready Streamlit web application comprising six modules: single-order prediction, batch CSV prediction, model performance overview, 5-fold cross-validation results, feature importance visualisation, and ROI calculator.
+
+The seventh objective is to quantify the economic, operational, and environmental impact of ML adoption at a reference production volume of 1{,}000 orders per year, providing a credible, dataset-derived business case for factory decision-makers considering the investment.
+
+\secdiv
+\section{Motivation}
+Three complementary motivations---financial, technical, and environmental---underpin this research.
+
+From a financial perspective, the apparel sector's reliance on static BOM estimation creates a systematic and quantifiable cost. When the BOM formula over-procures fabric, the excess inventory must be warehoused, insured, and eventually written off or discounted; when it under-procures, emergency re-orders incur 10--25\% price premiums above contracted rates, plus expedited shipping costs and potential late-delivery penalties. The LSTM's 21.8\% RMSE improvement over the BOM baseline translates directly to \$180{,}000 in annual waste cost savings at a reference volume of 1{,}000 orders per year---a saving recoverable from a single season's operational budget given the \$50{,}000 estimated implementation cost.
+
+From a technical perspective, fabric consumption is a fundamentally non-linear function of at least nine interacting parameters: order quantity, garment type, pattern width, pattern height, fabric width, marker efficiency, defect rate, complexity rating, and seasonal context. The BOM formula captures the primary multiplicative relationship between these variables but applies static coefficients that cannot adapt to the non-linear interactions that drive deviation from plan. Machine learning provides a systematic, data-driven framework for extracting the predictive signal embedded in a factory's accumulated production records, learning the parameter interactions that static formulas approximate.
+
+From an environmental perspective, every yard of fabric procured but not productively used has already incurred the full environmental cost of fibre cultivation or synthesis, spinning, weaving, dyeing, and finishing. At the reference production volume, the LSTM's 21.8\% improvement avoids approximately 17{,}200 yards of surplus fabric procurement per year, corresponding to 6{,}850\,kg of avoided CO\textsubscript{2} emissions, 103{,}500 litres of water conserved, and 4{,}300\,kg of fabric diverted from landfill---material contributions to the industry's sustainability obligations at a time when ESG reporting requirements are intensifying.
+
+\secdiv
+\section{Rationale of the Study}
+Despite the documented inaccuracy of BOM estimation and the widespread adoption of Enterprise Resource Planning (ERP) systems in the apparel sector, the factory-level data required to train ML forecasting models is routinely collected but rarely applied to improve procurement. ERP systems record order quantities, actual fabric issued to the cutting floor, production parameters, and seasonal metadata---precisely the feature set needed to train the models developed in this thesis. The gap between data availability and data utilisation represents a tractable operational improvement opportunity that does not require new sensor infrastructure or specialist compute hardware.
+
+The choice of Streamlit as the deployment platform reflects the recognition that predictive accuracy alone is insufficient for industrial adoption: a model that requires specialist data science skills to operate will not be used by the procurement planners who are best positioned to benefit from it. The Streamlit application exposes all four trained models through a browser-accessible interface that requires only that a planner enter order attributes and press a button---the same cognitive overhead as the BOM formula it replaces, but with confidence-interval-bounded ML predictions rather than static coefficients.
+
+\secdiv
+\section{Expected Outcomes}
+This thesis is expected to produce the following seven outputs, each corresponding to one of the stated research objectives.
+
+A controlled four-way model comparison establishing the relative performance of LR, RF, XGBoost, and LSTM under identical experimental conditions will be reported on the held-out 1{,}000-order test set, with RMSE as the primary metric for procurement-relevant comparison.
+
+The LSTM model is expected to achieve the highest single-model accuracy, with an R\textsuperscript{2} approaching 0.9955 on the test set and a 21.8\% RMSE improvement over the BOM baseline, validating the thesis hypothesis that deep learning can materially outperform static formula estimation for this regression task.
+
+The physics-informed 5{,}000-order dataset generator will be provided as a reproducible, open benchmark, enabling future studies to compare new model architectures against the four-way baseline established here.
+
+Segmented analysis is expected to reveal a 37\% seasonal MAPE differential (winter harder than spring) and a 64\% fabric-type MAPE differential (polyester harder than denim), providing empirically grounded guidance on model reliability across production contexts.
+
+Five-fold cross-validation is expected to confirm that the XGBoost model's generalisation is stable across data subsets (RMSE standard deviation $\approx$28\,yd), and that the test-set performance ranking is reproducible.
+
+A production-ready six-module Streamlit application will be delivered as the primary practical output of the research, bridging the gap between academic model development and industrial deployment.
+
+The impact assessment will project \$180{,}000 in annual savings, a payback period of under four months on a \$50{,}000 investment, and a five-year NPV of \$730{,}000, providing a compelling business case for ML adoption in mid-scale RMG factory contexts.
+
+\secdiv
+\section{Thesis Organisation}
+The remainder of this thesis is structured across five chapters. Chapter~\ref{ch:lit} reviews the literature on material planning in apparel manufacturing, traditional BOM estimation, machine learning in manufacturing forecasting, and related fabric consumption prediction studies, concluding with the identification of five research gaps that this work addresses. Chapter~\ref{ch:method} presents the complete research methodology, covering dataset generation, preprocessing and feature engineering, model architectures, evaluation metrics, training and validation strategy, and the Streamlit application architecture. Chapter~\ref{ch:results} reports the experimental results across all four models and the ensemble, including variance analysis, feature importance, cross-validation, error distribution, LSTM training convergence, and segmented performance analysis by season and fabric type. Chapter~\ref{ch:impact} assesses the economic, operational, environmental, and social impact of deploying the ML system in an apparel manufacturing context, with all projections derived from the empirically validated RMSE improvement reported in Chapter~\ref{ch:results}. Chapter~\ref{ch:conclusion} summarises the key findings, states the original contributions to knowledge, acknowledges limitations, offers recommendations for practice, and identifies seven directions for future research.
